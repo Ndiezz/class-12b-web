@@ -50,7 +50,11 @@ export default function ConfessionBoard() {
   };
 
   // Form State
-  const [newMessage, setNewMessage] = useState({ nickname: "", content: "", color: "yellow" });
+  const [newMessage, setNewMessage] = useState({ 
+    nickname: "", 
+    content: "", 
+    color: COLORS[Math.floor(Math.random() * COLORS.length)] 
+  });
   
   // Modals & Optional Features
   const [showToModal, setShowToModal] = useState(false);
@@ -155,8 +159,8 @@ export default function ConfessionBoard() {
   return (
     <section id="board" className="p-4 sm:p-8 max-w-7xl mx-auto border-t-4 border-black graph-paper-pink relative">
       <div className="mb-6 sm:mb-8">
-        <span className="bg-neo-green border-2 border-black px-2.5 sm:px-3 py-0.5 sm:py-1 font-bold text-[10px] sm:text-xs uppercase tracking-widest text-black shadow-[2px_2px_0_0_#000] sm:shadow-[3px_3px_0_0_#000]">Chapter 02</span>
-        <h2 className="text-3xl sm:text-5xl md:text-7xl font-black uppercase mt-3 sm:mt-6 tracking-tight break-words">The Confession Board</h2>
+        <span className="bg-neo-green border-2 border-black px-2.5 sm:px-3 py-0.5 sm:py-1 font-bold text-[10px] sm:text-xs uppercase tracking-widest text-black shadow-[2px_2px_0_0_#000] sm:shadow-[3px_3px_0_0_#000]">CHAPTER 02</span>
+        <h2 className="text-3xl sm:text-5xl md:text-7xl font-black uppercase mt-3 sm:mt-6 tracking-tight break-words">Confession Board</h2>
         <p className="mt-2 sm:mt-4 font-medium text-xs sm:text-base md:text-lg max-w-2xl text-gray-800 leading-relaxed">
           Bisa pakai nama asli, nama panggilan, atau anonim. Tulisanmu bisa dibaca semua orang, dan hanya bisa mengirim 5 note sehari ya.
         </p>

@@ -33,6 +33,10 @@
 }
 
 @layer components {
+  .font-like-span, .font-like-span :not(h1, h2, h3, h4, h5, h6, .font-black, .font-black *) {
+    font-family: var(--font-body) !important;
+  }
+
   .graph-paper-pink {
     background-color: #FCE7F3;
     background-image: 

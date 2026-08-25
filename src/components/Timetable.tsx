@@ -15,10 +15,19 @@ const DAYS = [
   { key: "friday", label: "Jumat" }
 ] as const;
 
+const getCurrentDayKey = () => {
+  const day = new Date().getDay();
+  if (day >= 1 && day <= 5) {
+    return ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][day] as "monday" | "tuesday" | "wednesday" | "thursday" | "friday";
+  }
+  return "monday";
+};
+
 export default function Timetable() {
   const [entries, setEntries] = useState<TimetableEntry[]>([]);
   const { isAdmin } = useRole();
-  const [activeDay, setActiveDay] = useState<"monday" | "tuesday" | "wednesday" | "thursday" | "friday">("monday");
+  const currentDay = getCurrentDayKey();
+  const [activeDay, setActiveDay] = useState<"monday" | "tuesday" | "wednesday" | "thursday" | "friday">(currentDay);
   const [newEntry, setNewEntry] = useState({ period: "", time: "", monday: "", tuesday: "", wednesday: "", thursday: "", friday: "" });
 
   useEffect(() => {
@@ -49,10 +58,10 @@ export default function Timetable() {
   };
 
   return (
-    <section id="timetable" className="p-4 sm:p-8 max-w-7xl mx-auto border-t-4 border-black bg-neo-cyan">
+    <section id="timetable" className="p-4 sm:p-8 max-w-7xl mx-auto border-t-4 border-black relative z-10">
       <div className="mb-6 sm:mb-8">
-        <span className="bg-neo-yellow border-2 sm:border-4 border-black px-2 sm:px-3 py-0.5 sm:py-1 font-bold text-xs sm:text-sm uppercase">Chapter 04</span>
-        <h2 className="text-3xl sm:text-5xl md:text-7xl font-black uppercase mt-3 sm:mt-4 break-words">The Grind</h2>
+        <span className="bg-neo-yellow border-2 border-black px-2.5 sm:px-3 py-0.5 sm:py-1 font-bold text-[10px] sm:text-xs uppercase tracking-widest text-black shadow-[2px_2px_0_0_#000] sm:shadow-[3px_3px_0_0_#000]">CHAPTER 04</span>
+        <h2 className="text-3xl sm:text-5xl md:text-7xl font-black uppercase mt-3 sm:mt-4 break-words">Jadwal Pelajaran</h2>
       </div>
 
       {isAdmin && (
@@ -150,40 +159,40 @@ export default function Timetable() {
       </div>
 
       {/* Desktop / Tablet View: Full Table */}
-      <div className="hidden md:block border-4 border-black shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] bg-white overflow-hidden">
+      <div className="hidden md:block border-4 border-black shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] bg-white overflow-hidden max-w-5xl mx-auto">
         <table className="w-full text-left font-bold border-collapse">
           <thead>
             <tr className="border-b-4 border-black bg-white">
-              <th className="p-3 lg:p-4 border-r-4 border-black w-28 uppercase text-xs lg:text-sm">Period</th>
-              <th className="p-3 lg:p-4 border-r-4 border-black uppercase text-xs lg:text-sm">Monday</th>
-              <th className="p-3 lg:p-4 border-r-4 border-black uppercase text-xs lg:text-sm">Tuesday</th>
-              <th className="p-3 lg:p-4 border-r-4 border-black uppercase text-xs lg:text-sm">Wednesday</th>
-              <th className="p-3 lg:p-4 border-r-4 border-black uppercase text-xs lg:text-sm">Thursday</th>
-              <th className="p-3 lg:p-4 uppercase text-xs lg:text-sm">Friday</th>
+              <th className="p-2 lg:p-3 border-r-4 border-black w-24 uppercase text-[10px] lg:text-xs">Period</th>
+              <th className={`p-2 lg:p-3 border-r-4 border-black uppercase text-[10px] lg:text-xs ${currentDay === 'monday' ? 'bg-neo-yellow' : ''}`}>Monday</th>
+              <th className={`p-2 lg:p-3 border-r-4 border-black uppercase text-[10px] lg:text-xs ${currentDay === 'tuesday' ? 'bg-neo-yellow' : ''}`}>Tuesday</th>
+              <th className={`p-2 lg:p-3 border-r-4 border-black uppercase text-[10px] lg:text-xs ${currentDay === 'wednesday' ? 'bg-neo-yellow' : ''}`}>Wednesday</th>
+              <th className={`p-2 lg:p-3 border-r-4 border-black uppercase text-[10px] lg:text-xs ${currentDay === 'thursday' ? 'bg-neo-yellow' : ''}`}>Thursday</th>
+              <th className={`p-2 lg:p-3 uppercase text-[10px] lg:text-xs ${currentDay === 'friday' ? 'bg-neo-yellow' : ''}`}>Friday</th>
             </tr>
           </thead>
           <tbody>
             {entries.map((entry) => (
               <tr key={entry.id} className="border-b-2 lg:border-b-4 border-black last:border-b-0 bg-white hover:bg-gray-50 relative group">
-                <td className="p-3 lg:p-4 border-r-4 border-black bg-black text-white relative">
-                  <div className="font-black text-sm lg:text-lg">{entry.period}</div>
-                  <div className="text-[10px] lg:text-xs text-gray-400 font-medium whitespace-nowrap">{entry.time}</div>
+                <td className="p-2 lg:p-3 border-r-4 border-black bg-black text-white relative">
+                  <div className="font-black text-xs lg:text-sm">{entry.period}</div>
+                  <div className="text-[9px] lg:text-[10px] text-gray-400 font-medium whitespace-nowrap">{entry.time}</div>
                   {isAdmin && (
-                    <button onClick={() => handleDelete(entry.id!)} className="absolute top-2 right-2 text-white hover:text-red-500 opacity-0 group-hover:opacity-100 p-1">
-                      <Trash2 size={14} />
+                    <button onClick={() => handleDelete(entry.id!)} className="absolute top-1 right-1 text-white hover:text-red-500 opacity-0 group-hover:opacity-100 p-1">
+                      <Trash2 size={12} />
                     </button>
                   )}
                 </td>
-                <td className="p-3 lg:p-4 border-r-4 border-black text-xs lg:text-sm break-words">{entry.monday || "-"}</td>
-                <td className="p-3 lg:p-4 border-r-4 border-black text-xs lg:text-sm break-words">{entry.tuesday || "-"}</td>
-                <td className="p-3 lg:p-4 border-r-4 border-black text-xs lg:text-sm break-words">{entry.wednesday || "-"}</td>
-                <td className="p-3 lg:p-4 border-r-4 border-black text-xs lg:text-sm break-words">{entry.thursday || "-"}</td>
-                <td className="p-3 lg:p-4 text-xs lg:text-sm break-words">{entry.friday || "-"}</td>
+                <td className={`p-2 lg:p-3 border-r-4 border-black text-[10px] lg:text-xs break-words ${currentDay === 'monday' ? 'bg-neo-yellow/20' : ''}`}>{entry.monday || "-"}</td>
+                <td className={`p-2 lg:p-3 border-r-4 border-black text-[10px] lg:text-xs break-words ${currentDay === 'tuesday' ? 'bg-neo-yellow/20' : ''}`}>{entry.tuesday || "-"}</td>
+                <td className={`p-2 lg:p-3 border-r-4 border-black text-[10px] lg:text-xs break-words ${currentDay === 'wednesday' ? 'bg-neo-yellow/20' : ''}`}>{entry.wednesday || "-"}</td>
+                <td className={`p-2 lg:p-3 border-r-4 border-black text-[10px] lg:text-xs break-words ${currentDay === 'thursday' ? 'bg-neo-yellow/20' : ''}`}>{entry.thursday || "-"}</td>
+                <td className={`p-2 lg:p-3 text-[10px] lg:text-xs break-words ${currentDay === 'friday' ? 'bg-neo-yellow/20' : ''}`}>{entry.friday || "-"}</td>
               </tr>
             ))}
             {entries.length === 0 && (
               <tr>
-                <td colSpan={6} className="p-8 text-center text-sm lg:text-base border-dashed">No timetable entries yet.</td>
+                <td colSpan={6} className="p-6 text-center text-xs lg:text-sm border-dashed">No timetable entries yet.</td>
               </tr>
             )}
           </tbody>

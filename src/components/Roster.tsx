@@ -80,10 +80,10 @@ export default function Roster() {
   };
 
   return (
-    <section id="roster" className="p-4 sm:p-8 max-w-7xl mx-auto">
+    <section id="roster" className="p-4 sm:p-8 max-w-7xl mx-auto relative z-10">
       <div className="mb-6 sm:mb-8">
-        <span className="bg-neo-yellow border-2 sm:border-4 border-black px-2 sm:px-3 py-0.5 sm:py-1 font-bold text-xs sm:text-sm uppercase">Chapter 01</span>
-        <h2 className="text-3xl sm:text-5xl md:text-7xl font-black uppercase mt-3 sm:mt-4 break-words">The Roster</h2>
+        <span className="bg-neo-yellow border-2 border-black px-2.5 sm:px-3 py-0.5 sm:py-1 font-bold text-[10px] sm:text-xs uppercase tracking-widest text-black shadow-[2px_2px_0_0_#000] sm:shadow-[3px_3px_0_0_#000]">CHAPTER 01</span>
+        <h2 className="text-3xl sm:text-5xl md:text-7xl font-black uppercase mt-3 sm:mt-4 break-words">Anggota</h2>
       </div>
 
       {isAdmin && (
