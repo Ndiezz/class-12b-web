@@ -1,9 +1,3 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
-import { HashRouter, Routes, Route } from "react-router-dom";
 import Header from "./components/Header";
 import Hero from "./components/Hero";
 import MarqueeRibbon from "./components/MarqueeRibbon";
@@ -14,7 +8,7 @@ import ConfessionBoard from "./components/ConfessionBoard";
 import Polls from "./components/Polls";
 import Footer from "./components/Footer";
 
-function Home() {
+export default function App() {
   return (
     <div className="min-h-screen selection:bg-neo-pink selection:text-white pb-0 overflow-x-hidden max-w-[100vw]">
       <Header />
@@ -31,14 +25,3 @@ function Home() {
     </div>
   );
 }
-
-export default function App() {
-  return (
-    <HashRouter>
-      <Routes>
-        <Route path="*" element={<Home />} />
-      </Routes>
-    </HashRouter>
-  );
-}
-
