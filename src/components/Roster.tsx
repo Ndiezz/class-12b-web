@@ -21,10 +21,20 @@ const COLOR_CLASSES: Record<string, string> = {
   red: "bg-neo-red",
 };
 
+const parseImageUrl = (url: string) => {
+  if (!url) return "";
+  const driveRegex = /\/file\/d\/([a-zA-Z0-9_-]+)/;
+  const match = url.match(driveRegex);
+  if (match && match[1]) {
+    return `https://drive.google.com/uc?export=view&id=${match[1]}`;
+  }
+  return url;
+};
+
 export default function Roster() {
   const [students, setStudents] = useState<Student[]>([]);
   const { isAdmin } = useRole();
-  const [newStudent, setNewStudent] = useState({ name: "", initials: "", role: "", funFact: "", birthday: "", color: "white" });
+  const [newStudent, setNewStudent] = useState({ name: "", initials: "", role: "", funFact: "", birthday: "", color: "white", imageUrl: "" });
   
   // Song functionality
   const [showSongModal, setShowSongModal] = useState(false);
@@ -60,11 +70,11 @@ export default function Roster() {
     if (!newStudent.name || !newStudent.initials) return;
     
     try {
-      const studentData: any = { ...newStudent };
+      const studentData: any = { ...newStudent, imageUrl: parseImageUrl(newStudent.imageUrl) };
       if (selectedSong) studentData.song = selectedSong;
       
       await addDoc(collection(db, "students"), studentData);
-      setNewStudent({ name: "", initials: "", role: "", funFact: "", birthday: "", color: "white" });
+      setNewStudent({ name: "", initials: "", role: "", funFact: "", birthday: "", color: "white", imageUrl: "" });
       setSelectedSong(null);
     } catch (err) {
       console.error(err);
@@ -101,6 +111,10 @@ export default function Roster() {
             <div className="flex flex-col flex-1 min-w-[120px]">
               <label className="font-bold text-xs sm:text-sm">Role/Title (optional)</label>
               <input type="text" className="input-brutal w-full" value={newStudent.role} onChange={e => setNewStudent({...newStudent, role: e.target.value})} />
+            </div>
+            <div className="flex flex-col flex-1 min-w-[120px]">
+              <label className="font-bold text-xs sm:text-sm">Image URL (Drive/Link)</label>
+              <input type="url" className="input-brutal w-full" placeholder="https://..." value={newStudent.imageUrl} onChange={e => setNewStudent({...newStudent, imageUrl: e.target.value})} />
             </div>
             <div className="flex flex-col flex-1 min-w-[120px]">
               <label className="font-bold text-xs sm:text-sm">Fun Fact (optional)</label>
@@ -189,53 +203,79 @@ export default function Roster() {
         </div>
       )}
 
-      {/* Grid: 3 per row on mobile, up to 6 on desktop */}
-      <div className="grid grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-4">
+      {/* Grid: 2 per row on mobile, up to 4 on desktop for larger polaroid cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
         {students.map((student) => {
           const bgClass = COLOR_CLASSES[student.color] || "bg-white";
           
           return (
-            <div key={student.id} className="border-2 sm:border-4 border-black p-2 sm:p-3 relative group flex flex-col shadow-[2px_2px_0_0_#000] sm:shadow-[4px_4px_0_0_#000] bg-white">
+            <div key={student.id} className="border-2 sm:border-4 border-black p-2 sm:p-3 relative group flex flex-col shadow-[4px_4px_0_0_#000] bg-white aspect-[3/4]">
               {isAdmin && (
-                <button onClick={() => handleDelete(student.id!)} className="absolute top-1 right-1 sm:top-2 sm:right-2 text-black hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity z-10 bg-white border border-black rounded-full p-0.5 sm:p-1 shadow-[1px_1px_0_0_#000]">
+                <button onClick={() => handleDelete(student.id!)} className="absolute top-1 right-1 sm:top-2 sm:right-2 text-black hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity z-50 bg-white border border-black rounded-full p-0.5 sm:p-1 shadow-[1px_1px_0_0_#000]">
                   <Trash2 size={12} className="sm:w-3.5 sm:h-3.5" />
                 </button>
               )}
               
-              {/* Initials Div */}
-              <div className={`self-start min-w-[1.75rem] sm:min-w-[2.5rem] px-1 sm:px-2 h-7 sm:h-10 flex-shrink-0 border sm:border-2 border-black flex items-center justify-center font-black text-xs sm:text-lg mb-1 sm:mb-2 ${bgClass}`}>
-                {student.initials}
+              {/* Background Image / Placeholder */}
+              <div className="absolute inset-2 sm:inset-3 border-2 border-black overflow-hidden bg-gray-200">
+                {student.imageUrl ? (
+                  <img src={student.imageUrl} alt={student.name} className="w-full h-full object-cover" />
+                ) : (
+                  <div className={`w-full h-full ${bgClass} opacity-50 flex items-center justify-center`}>
+                    <span className="font-black text-6xl opacity-20">{student.initials}</span>
+                  </div>
+                )}
               </div>
               
-              <h3 className="font-black text-[11px] sm:text-sm mb-0.5 sm:mb-1 leading-tight line-clamp-2 break-words">{student.name}</h3>
-              
-              {/* Role Badge */}
-              {student.role && (
-                <span className={`self-start inline-block border border-black px-1 sm:px-1.5 py-0.2 sm:py-0.5 text-[8px] sm:text-[10px] font-bold uppercase mb-1 sm:mb-2 max-w-full truncate ${bgClass}`}>
-                  {student.role}
-                </span>
-              )}
-              
-              <p className="font-medium text-[8px] sm:text-[10px] flex-1 mb-1 sm:mb-2 leading-tight text-gray-700 line-clamp-3 sm:line-clamp-none">
-                {student.funFact}
-              </p>
-              
-              {/* Song integration */}
-              {student.song && (
-                <div className="flex items-center gap-1 bg-gray-50 border border-black p-0.5 sm:p-1 mb-1 sm:mb-2">
-                  <img src={student.song.coverUrl} alt="Cover" className="w-4 h-4 sm:w-5 sm:h-5 border border-black shrink-0" />
-                  <div className="overflow-hidden min-w-0">
-                    <p className="font-bold text-[7px] sm:text-[8px] truncate uppercase leading-none">{student.song.title}</p>
-                    <p className="text-[6px] sm:text-[7px] truncate font-body leading-none text-gray-600">{student.song.artist}</p>
+              {/* Floating elements on top of the image */}
+              <div className="relative z-10 flex flex-col h-full pointer-events-none justify-between">
+                
+                {/* Floating Initials (Top Left) and Name (Center) */}
+                <div className="flex justify-between items-start -mt-1 sm:-mt-2 -mx-1 sm:-mx-2">
+                  <div className={`self-start min-w-[1.75rem] sm:min-w-[2.5rem] px-1 sm:px-2 h-7 sm:h-10 flex-shrink-0 border-2 border-black flex items-center justify-center font-black text-xs sm:text-lg bg-white shadow-[2px_2px_0_0_#000]`}>
+                    {student.initials}
                   </div>
+                  
+                  <h3 className={`mt-1 mr-1 px-2 py-0.5 border-2 border-black font-black text-[10px] sm:text-xs text-center line-clamp-1 break-all ${bgClass} shadow-[2px_2px_0_0_#000]`}>
+                    {student.name}
+                  </h3>
                 </div>
-              )}
+                
+                {/* Bottom Overlays */}
+                <div className="flex flex-col gap-1 sm:gap-1.5 mt-auto -mx-1 sm:-mx-1">
+                  {/* Role & Bday row */}
+                  <div className="flex gap-1 w-full pointer-events-auto">
+                    {student.role && (
+                      <span className={`px-1 border-2 border-black font-bold uppercase text-[8px] sm:text-[9px] shadow-[2px_2px_0_0_#000] truncate flex-1 text-center bg-white`}>
+                        {student.role}
+                      </span>
+                    )}
+                    {student.birthday && (
+                      <span className={`px-1 border-2 border-black font-bold uppercase text-[8px] sm:text-[9px] shadow-[2px_2px_0_0_#000] truncate flex-1 text-center bg-white`}>
+                        🎂 {student.birthday}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {/* About me (fun fact) */}
+                  {student.funFact && (
+                    <span className={`px-1 border-2 border-black font-medium text-[9px] sm:text-[10px] shadow-[2px_2px_0_0_#000] w-full text-center bg-white line-clamp-2 leading-tight py-0.5 pointer-events-auto`}>
+                      {student.funFact}
+                    </span>
+                  )}
 
-              {student.birthday && (
-                <div className="text-[8px] sm:text-[10px] font-bold uppercase flex items-center gap-0.5 sm:gap-1 border-t border-black pt-1 sm:pt-2 mt-auto truncate">
-                  🎂 {student.birthday}
+                  {/* Song integration */}
+                  {student.song && (
+                    <div className="w-full flex items-center gap-1 bg-white border-2 border-black p-1 shadow-[2px_2px_0_0_#000] pointer-events-auto">
+                      <img src={student.song.coverUrl} alt="Cover" className="w-5 h-5 sm:w-6 sm:h-6 border border-black shrink-0" />
+                      <div className="overflow-hidden min-w-0">
+                        <p className="font-bold text-[7px] sm:text-[8px] truncate uppercase leading-none">{student.song.title}</p>
+                        <p className="text-[6px] sm:text-[7px] truncate font-body leading-none text-gray-600">{student.song.artist}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           );
         })}

@@ -6,6 +6,7 @@ export interface Student {
   funFact: string;
   birthday: string;
   color: string;
+  imageUrl?: string;
   song?: {
     title: string;
     artist: string;
