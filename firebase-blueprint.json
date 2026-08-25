@@ -1,0 +1,110 @@
+{
+  "entities": {
+    "Student": {
+      "title": "Student",
+      "description": "A member of the class",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "initials": { "type": "string", "maxLength": 4 },
+        "role": { "type": "string", "maxLength": 50 },
+        "funFact": { "type": "string", "maxLength": 200 },
+        "birthday": { "type": "string", "maxLength": 20 },
+        "color": { "type": "string", "maxLength": 20 }
+      },
+      "required": ["name", "initials"]
+    },
+    "TimetableEntry": {
+      "title": "Timetable Entry",
+      "description": "A class period in the timetable",
+      "type": "object",
+      "properties": {
+        "period": { "type": "string", "maxLength": 5 },
+        "time": { "type": "string", "maxLength": 20 },
+        "monday": { "type": "string", "maxLength": 50 },
+        "tuesday": { "type": "string", "maxLength": 50 },
+        "wednesday": { "type": "string", "maxLength": 50 },
+        "thursday": { "type": "string", "maxLength": 50 },
+        "friday": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["period", "time"]
+    },
+    "GalleryImage": {
+      "title": "Gallery Image",
+      "description": "An image URL in the memory wall",
+      "type": "object",
+      "properties": {
+        "url": { "type": "string", "maxLength": 1000 },
+        "caption": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["url"]
+    },
+    "Message": {
+      "title": "Confession Board Message",
+      "description": "A message posted to the confession board",
+      "type": "object",
+      "properties": {
+        "nickname": { "type": "string", "maxLength": 30 },
+        "content": { "type": "string", "maxLength": 500 },
+        "color": { "type": "string", "maxLength": 20 },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["content", "color", "createdAt"]
+    },
+    "Poll": {
+      "title": "Poll",
+      "description": "A poll with voting options",
+      "type": "object",
+      "properties": {
+        "question": { "type": "string", "maxLength": 200 },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "text": { "type": "string", "maxLength": 100 },
+              "votes": { "type": "number" }
+            }
+          }
+        },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["question", "options"]
+    },
+    "Config": {
+      "title": "Config",
+      "description": "Global settings",
+      "type": "object",
+      "properties": {
+        "className": { "type": "string", "maxLength": 50 }
+      }
+    }
+  },
+  "firestore": {
+    "students/{studentId}": {
+      "schema": { "$ref": "#/entities/Student" },
+      "description": "Class members roster"
+    },
+    "timetable/{entryId}": {
+      "schema": { "$ref": "#/entities/TimetableEntry" },
+      "description": "Timetable rows"
+    },
+    "gallery/{imageId}": {
+      "schema": { "$ref": "#/entities/GalleryImage" },
+      "description": "Memory wall photos"
+    },
+    "messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Confession board messages"
+    },
+    "polls/{pollId}": {
+      "schema": { "$ref": "#/entities/Poll" },
+      "description": "Class polls"
+    },
+    "config/{configId}": {
+      "schema": { "$ref": "#/entities/Config" },
+      "description": "Global configuration"
+    }
+  }
+}
