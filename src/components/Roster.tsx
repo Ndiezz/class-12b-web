@@ -5,7 +5,7 @@ import { db } from "@/src/lib/firebase";
 import { Student } from "@/src/types";
 import { NeoCard } from "./ui/NeoCard";
 import { NeoButton } from "./ui/NeoButton";
-import { Trash2, Music, X, Search } from "lucide-react";
+import { Trash2, Music, X, Search, Instagram } from "lucide-react";
 
 const COLORS = ["white", "yellow", "cyan", "green", "pink", "orange", "purple", "blue", "lime", "red"] as const;
 const COLOR_CLASSES: Record<string, string> = {
@@ -23,10 +23,11 @@ const COLOR_CLASSES: Record<string, string> = {
 
 const parseImageUrl = (url: string) => {
   if (!url) return "";
-  const driveRegex = /\/file\/d\/([a-zA-Z0-9_-]+)/;
-  const match = url.match(driveRegex);
-  if (match && match[1]) {
-    return `https://drive.google.com/uc?export=view&id=${match[1]}`;
+  const match1 = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  const match2 = url.match(/id=([a-zA-Z0-9_-]+)/);
+  const id = match1 ? match1[1] : (match2 ? match2[1] : null);
+  if (id) {
+    return `https://lh3.googleusercontent.com/d/${id}`;
   }
   return url;
 };
@@ -34,7 +35,7 @@ const parseImageUrl = (url: string) => {
 export default function Roster() {
   const [students, setStudents] = useState<Student[]>([]);
   const { isAdmin } = useRole();
-  const [newStudent, setNewStudent] = useState({ name: "", initials: "", role: "", funFact: "", birthday: "", color: "white", imageUrl: "" });
+  const [newStudent, setNewStudent] = useState({ name: "", initials: "", role: "", funFact: "", birthday: "", color: "white", imageUrl: "", instagram: "" });
   
   // Song functionality
   const [showSongModal, setShowSongModal] = useState(false);
@@ -74,7 +75,7 @@ export default function Roster() {
       if (selectedSong) studentData.song = selectedSong;
       
       await addDoc(collection(db, "students"), studentData);
-      setNewStudent({ name: "", initials: "", role: "", funFact: "", birthday: "", color: "white", imageUrl: "" });
+      setNewStudent({ name: "", initials: "", role: "", funFact: "", birthday: "", color: "white", imageUrl: "", instagram: "" });
       setSelectedSong(null);
     } catch (err) {
       console.error(err);
@@ -115,6 +116,10 @@ export default function Roster() {
             <div className="flex flex-col flex-1 min-w-[120px]">
               <label className="font-bold text-xs sm:text-sm">Image URL (Drive/Link)</label>
               <input type="url" className="input-brutal w-full" placeholder="https://..." value={newStudent.imageUrl} onChange={e => setNewStudent({...newStudent, imageUrl: e.target.value})} />
+            </div>
+            <div className="flex flex-col flex-1 min-w-[120px]">
+              <label className="font-bold text-xs sm:text-sm">Instagram Handle/Link</label>
+              <input type="text" className="input-brutal w-full" placeholder="@username" value={newStudent.instagram} onChange={e => setNewStudent({...newStudent, instagram: e.target.value})} />
             </div>
             <div className="flex flex-col flex-1 min-w-[120px]">
               <label className="font-bold text-xs sm:text-sm">Fun Fact (optional)</label>
@@ -209,72 +214,70 @@ export default function Roster() {
           const bgClass = COLOR_CLASSES[student.color] || "bg-white";
           
           return (
-            <div key={student.id} className="border-2 sm:border-4 border-black p-2 sm:p-3 relative group flex flex-col shadow-[4px_4px_0_0_#000] bg-white aspect-[3/4]">
+            <div key={student.id} className={`bg-white texture-polkadot border-2 sm:border-4 border-black p-2 sm:p-3 pb-3 sm:pb-4 relative group flex flex-col shadow-[4px_4px_0_0_#000] sm:shadow-[6px_6px_0_0_#000] transform transition-transform hover:-translate-y-1 hover:rotate-1`}>
               {isAdmin && (
                 <button onClick={() => handleDelete(student.id!)} className="absolute top-1 right-1 sm:top-2 sm:right-2 text-black hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity z-50 bg-white border border-black rounded-full p-0.5 sm:p-1 shadow-[1px_1px_0_0_#000]">
                   <Trash2 size={12} className="sm:w-3.5 sm:h-3.5" />
                 </button>
               )}
               
-              {/* Background Image / Placeholder */}
-              <div className="absolute inset-2 sm:inset-3 border-2 border-black overflow-hidden bg-gray-200">
+              {/* Image Area (Polaroid style) */}
+              <div className="relative border-2 sm:border-4 border-black aspect-[4/5] overflow-hidden bg-gray-100 mb-2 sm:mb-3">
                 {student.imageUrl ? (
-                  <img src={student.imageUrl} alt={student.name} className="w-full h-full object-cover" />
+                  <img src={parseImageUrl(student.imageUrl)} alt={student.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                 ) : (
-                  <div className={`w-full h-full ${bgClass} opacity-50 flex items-center justify-center`}>
-                    <span className="font-black text-6xl opacity-20">{student.initials}</span>
+                  <div className={`w-full h-full ${bgClass} opacity-80 flex items-center justify-center`}>
+                    <span className="font-black text-6xl opacity-30">{student.initials}</span>
                   </div>
                 )}
               </div>
-              
-              {/* Floating elements on top of the image */}
-              <div className="relative z-10 flex flex-col h-full pointer-events-none justify-between">
+
+              {/* Info Area */}
+              <div className="flex flex-col flex-1 bg-white/80 p-1 -m-1">
+                {/* Name - NO truncation, allow wrapping */}
+                <h3 className="font-like-span font-bold text-sm sm:text-lg capitalize leading-tight mb-2 sm:mb-3 text-black">
+                  {student.name}
+                </h3>
                 
-                {/* Floating Initials (Top Left) and Name (Center) */}
-                <div className="flex justify-between items-start -mt-1 sm:-mt-2 -mx-1 sm:-mx-2">
-                  <div className={`self-start min-w-[1.75rem] sm:min-w-[2.5rem] px-1 sm:px-2 h-7 sm:h-10 flex-shrink-0 border-2 border-black flex items-center justify-center font-black text-xs sm:text-lg bg-white shadow-[2px_2px_0_0_#000]`}>
+                {/* Badges */}
+                <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 mb-2">
+                  <span className={`px-1.5 py-0.5 border-2 border-black font-bold uppercase text-[9px] sm:text-[10px] shadow-[2px_2px_0_0_#000] ${bgClass}`}>
                     {student.initials}
-                  </div>
-                  
-                  <h3 className={`mt-1 mr-1 px-2 py-0.5 border-2 border-black font-black text-[10px] sm:text-xs text-center line-clamp-1 break-all ${bgClass} shadow-[2px_2px_0_0_#000]`}>
-                    {student.name}
-                  </h3>
-                </div>
-                
-                {/* Bottom Overlays */}
-                <div className="flex flex-col gap-1 sm:gap-1.5 mt-auto -mx-1 sm:-mx-1">
-                  {/* Role & Bday row */}
-                  <div className="flex gap-1 w-full pointer-events-auto">
-                    {student.role && (
-                      <span className={`px-1 border-2 border-black font-bold uppercase text-[8px] sm:text-[9px] shadow-[2px_2px_0_0_#000] truncate flex-1 text-center bg-white`}>
-                        {student.role}
-                      </span>
-                    )}
-                    {student.birthday && (
-                      <span className={`px-1 border-2 border-black font-bold uppercase text-[8px] sm:text-[9px] shadow-[2px_2px_0_0_#000] truncate flex-1 text-center bg-white`}>
-                        🎂 {student.birthday}
-                      </span>
-                    )}
-                  </div>
-                  
-                  {/* About me (fun fact) */}
-                  {student.funFact && (
-                    <span className={`px-1 border-2 border-black font-medium text-[9px] sm:text-[10px] shadow-[2px_2px_0_0_#000] w-full text-center bg-white line-clamp-2 leading-tight py-0.5 pointer-events-auto`}>
-                      {student.funFact}
+                  </span>
+                  {student.role && (
+                    <span className={`px-1.5 py-0.5 border-2 border-black font-bold uppercase text-[9px] sm:text-[10px] shadow-[2px_2px_0_0_#000] ${bgClass}`}>
+                      {student.role}
                     </span>
                   )}
-
-                  {/* Song integration */}
-                  {student.song && (
-                    <div className="w-full flex items-center gap-1 bg-white border-2 border-black p-1 shadow-[2px_2px_0_0_#000] pointer-events-auto">
-                      <img src={student.song.coverUrl} alt="Cover" className="w-5 h-5 sm:w-6 sm:h-6 border border-black shrink-0" />
-                      <div className="overflow-hidden min-w-0">
-                        <p className="font-bold text-[7px] sm:text-[8px] truncate uppercase leading-none">{student.song.title}</p>
-                        <p className="text-[6px] sm:text-[7px] truncate font-body leading-none text-gray-600">{student.song.artist}</p>
-                      </div>
-                    </div>
+                  {student.birthday && (
+                    <span className="px-1.5 py-0.5 border-2 border-black font-bold uppercase text-[9px] sm:text-[10px] shadow-[2px_2px_0_0_#000] bg-white">
+                      🎂 {student.birthday}
+                    </span>
+                  )}
+                  {student.instagram && (
+                    <a href={student.instagram.startsWith('http') ? student.instagram : `https://instagram.com/${student.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="ml-auto bg-white border-2 border-black p-1 shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] transition-all">
+                      <Instagram size={12} className="sm:w-3.5 sm:h-3.5" />
+                    </a>
                   )}
                 </div>
+                
+                {/* Fun Fact */}
+                {student.funFact && (
+                   <p className="font-medium text-[10px] sm:text-xs text-gray-800 mb-2 leading-tight flex-1">
+                     "{student.funFact}"
+                   </p>
+                )}
+
+                {/* Song */}
+                {student.song && (
+                   <div className="mt-auto flex items-center gap-1 sm:gap-2 bg-white border-2 border-black p-1 sm:p-1.5 shadow-[2px_2px_0_0_#000]">
+                     <img src={student.song.coverUrl} alt="Cover" className="w-6 h-6 sm:w-8 sm:h-8 border-2 border-black shrink-0" />
+                     <div className="overflow-hidden min-w-0">
+                       <p className="font-bold text-[8px] sm:text-[10px] truncate uppercase leading-none mb-0.5 sm:mb-1">{student.song.title}</p>
+                       <p className="text-[7px] sm:text-[9px] truncate font-body leading-none text-gray-600">{student.song.artist}</p>
+                     </div>
+                   </div>
+                )}
               </div>
             </div>
           );

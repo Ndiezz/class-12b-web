@@ -23,6 +23,19 @@ const getCurrentDayKey = () => {
   return "monday";
 };
 
+const DEFAULT_TIMETABLE: TimetableEntry[] = [
+  { id: "1", period: "1", time: "07:30 - 08:10", monday: "-", tuesday: "Sholat Dhuha", wednesday: "PJOK", thursday: "Matematika", friday: "Kimia TL" },
+  { id: "2", period: "2", time: "08:10 - 08:50", monday: "Informatika TL", tuesday: "Kimia TL", wednesday: "PJOK", thursday: "Matematika", friday: "Kimia TL" },
+  { id: "3", period: "3", time: "08:50 - 09:30", monday: "Informatika TL", tuesday: "Kimia TL", wednesday: "PJOK", thursday: "Pend. Al Qur'an", friday: "Kimia TL" },
+  { id: "4", period: "4", time: "09:45 - 10:25", monday: "Fisika TL", tuesday: "BK", wednesday: "Biologi TL", thursday: "Prakarya", friday: "B. Ing" },
+  { id: "5", period: "5", time: "10:25 - 11:05", monday: "Fisika TL", tuesday: "Biologi TL", wednesday: "Biologi TL", thursday: "Prakarya", friday: "B. Ing" },
+  { id: "6", period: "6", time: "11:05 - 11:45", monday: "Fisika TL", tuesday: "Biologi TL", wednesday: "Biologi TL", thursday: "Pend. Pancasila", friday: "B. Ing" },
+  { id: "7", period: "7", time: "13:00 - 13:35", monday: "Matematika", tuesday: "Sejarah", wednesday: "Fisika TL", thursday: "Pend. Pancasila", friday: "Seni Budaya" },
+  { id: "8", period: "8", time: "13:35 - 14:10", monday: "Matematika", tuesday: "Sejarah", wednesday: "Fisika TL", thursday: "Informatika TL", friday: "Seni Budaya" },
+  { id: "9", period: "9", time: "14:10 - 14:45", monday: "PABP", tuesday: "Bhs Indonesia", wednesday: "Bhs Indonesia", thursday: "Informatika TL", friday: "Seni Budaya" },
+  { id: "10", period: "10", time: "14:45 - 15:20", monday: "PABP", tuesday: "Bhs Indonesia", wednesday: "Bhs Indonesia", thursday: "Informatika TL", friday: "-" }
+];
+
 export default function Timetable() {
   const [entries, setEntries] = useState<TimetableEntry[]>([]);
   const { isAdmin } = useRole();
@@ -33,7 +46,7 @@ export default function Timetable() {
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "timetable"), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TimetableEntry));
-      setEntries(data.sort((a, b) => a.period.localeCompare(b.period)));
+      setEntries(data.sort((a, b) => parseInt(a.period) - parseInt(b.period)));
     });
     return unsub;
   }, []);
@@ -56,6 +69,8 @@ export default function Timetable() {
       console.error(err);
     }
   };
+
+  const displayEntries = entries.length > 0 ? entries : DEFAULT_TIMETABLE;
 
   return (
     <section id="timetable" className="p-4 sm:p-8 max-w-7xl mx-auto border-t-4 border-black relative z-10">
@@ -122,7 +137,7 @@ export default function Timetable() {
 
         {/* Daily Schedule Cards */}
         <div className="space-y-2">
-          {entries.map((entry) => {
+          {displayEntries.map((entry) => {
             const subject = entry[activeDay] || "-";
             return (
               <div 
@@ -139,7 +154,7 @@ export default function Timetable() {
                     <div className="font-black text-xs truncate">{subject}</div>
                   </div>
                 </div>
-                {isAdmin && (
+                {isAdmin && entries.length > 0 && (
                   <button 
                     onClick={() => handleDelete(entry.id!)} 
                     className="text-red-500 hover:text-red-700 p-1 border border-black rounded-full bg-gray-50 shrink-0 ml-2"
@@ -150,7 +165,7 @@ export default function Timetable() {
               </div>
             );
           })}
-          {entries.length === 0 && (
+          {displayEntries.length === 0 && (
             <div className="p-6 bg-white border-2 border-black text-center font-bold text-xs">
               No timetable entries yet.
             </div>
@@ -172,12 +187,12 @@ export default function Timetable() {
             </tr>
           </thead>
           <tbody>
-            {entries.map((entry) => (
+            {displayEntries.map((entry) => (
               <tr key={entry.id} className="border-b-2 lg:border-b-4 border-black last:border-b-0 bg-white hover:bg-gray-50 relative group">
                 <td className="p-2 lg:p-3 border-r-4 border-black bg-black text-white relative">
                   <div className="font-black text-xs lg:text-sm">{entry.period}</div>
                   <div className="text-[9px] lg:text-[10px] text-gray-400 font-medium whitespace-nowrap">{entry.time}</div>
-                  {isAdmin && (
+                  {isAdmin && entries.length > 0 && (
                     <button onClick={() => handleDelete(entry.id!)} className="absolute top-1 right-1 text-white hover:text-red-500 opacity-0 group-hover:opacity-100 p-1">
                       <Trash2 size={12} />
                     </button>

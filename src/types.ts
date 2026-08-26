@@ -7,6 +7,7 @@ export interface Student {
   birthday: string;
   color: string;
   imageUrl?: string;
+  instagram?: string;
   song?: {
     title: string;
     artist: string;

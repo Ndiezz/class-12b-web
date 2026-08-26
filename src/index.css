@@ -45,6 +45,12 @@
     background-size: 32px 32px;
   }
   
+  .texture-polkadot {
+    background-image: radial-gradient(rgba(17, 17, 17, 0.15) 1px, transparent 1px);
+    background-size: 10px 10px;
+    background-position: 0 0, 5px 5px;
+  }
+  
   .input-brutal {
     @apply w-full border-2 border-black bg-white p-3 text-sm outline-none;
     transition-property: background-color, box-shadow;

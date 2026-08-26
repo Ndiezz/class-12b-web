@@ -8,10 +8,12 @@ import { NeoButton } from "./ui/NeoButton";
 import { Trash2 } from "lucide-react";
 
 const parseImageUrl = (url: string) => {
-  const driveRegex = /\/file\/d\/([a-zA-Z0-9_-]+)/;
-  const match = url.match(driveRegex);
-  if (match && match[1]) {
-    return `https://drive.google.com/uc?export=view&id=${match[1]}`;
+  if (!url) return "";
+  const match1 = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  const match2 = url.match(/id=([a-zA-Z0-9_-]+)/);
+  const id = match1 ? match1[1] : (match2 ? match2[1] : null);
+  if (id) {
+    return `https://lh3.googleusercontent.com/d/${id}`;
   }
   return url;
 };
@@ -87,7 +89,7 @@ export default function MemoryWall() {
               </button>
             )}
             <div className="border-2 sm:border-4 border-black overflow-hidden bg-gray-200">
-              <img src={img.url} alt={img.caption} className="w-full h-auto object-cover" />
+              <img src={parseImageUrl(img.url)} alt={img.caption} referrerPolicy="no-referrer" className="w-full h-auto object-cover" />
             </div>
             {img.caption && (
               <p className="mt-2 sm:mt-4 font-bold text-center uppercase tracking-wide px-1 sm:px-2 pb-1 sm:pb-2 text-[10px] sm:text-base break-words line-clamp-2 sm:line-clamp-none">
