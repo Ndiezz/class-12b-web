@@ -13,7 +13,7 @@ export default function Footer() {
   };
 
   return (
-    <footer className="border-t-4 border-black bg-white p-4 sm:p-8 md:p-16 flex flex-col md:flex-row justify-between items-start gap-8 sm:gap-12">
+    <footer className="border-t-4 border-black bg-white p-4 sm:p-8 md:p-16 flex flex-col md:flex-row justify-between items-start gap-8 sm:gap-12 relative z-10">
       <div className="flex-1 max-w-xl w-full">
         <h2 className="text-2xl sm:text-4xl md:text-6xl font-black uppercase mb-3 sm:mb-4 break-words">Contact the Class Rep</h2>
         <p className="font-medium text-xs sm:text-base md:text-lg mb-6 sm:mb-8 leading-relaxed">
@@ -36,8 +36,8 @@ export default function Footer() {
         )}
       </div>
 
-      <div className="flex-1 w-full md:w-auto">
-        <NeoCard color="yellow" className="p-4 sm:p-8 text-center max-w-md mx-auto md:mr-0">
+      <div className="flex-1 w-full md:w-auto flex flex-col gap-6">
+        <NeoCard color="cyan" className="p-4 sm:p-8 text-center max-w-md mx-auto md:mr-0 w-full">
           <h3 className="font-black text-xl sm:text-2xl mb-2">Class 12-B</h3>
           <p className="font-bold text-xs sm:text-sm mb-4 sm:mb-6">Website maintained by the admin team.</p>
           <div className="text-[10px] sm:text-xs font-bold uppercase tracking-widest border-t-2 sm:border-t-4 border-black pt-3 sm:pt-4">

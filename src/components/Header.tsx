@@ -35,7 +35,7 @@ export default function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-50 bg-white border-b-4 border-black p-3 sm:p-4 flex justify-between items-center">
+      <header className="sticky top-0 z-50 bg-white border-b-4 border-black p-3 sm:p-4 flex flex-wrap justify-between items-center gap-3">
         <div className="flex items-center gap-1.5 sm:gap-2 font-black text-lg sm:text-2xl uppercase tracking-tighter shrink-0">
           <div className="bg-neo-cyan border-2 border-black p-0.5 sm:p-1">
             <GraduationCap size={20} className="sm:w-6 sm:h-6" strokeWidth={3} />
@@ -43,7 +43,7 @@ export default function Header() {
           CLASS 12-B
         </div>
 
-        <nav className="hidden md:flex gap-6 font-bold uppercase text-sm tracking-wide">
+        <nav className="hidden lg:flex gap-4 xl:gap-6 font-bold uppercase text-sm tracking-wide">
           <a href="#roster" className="hover:underline underline-offset-4">Roster</a>
           <a href="#board" className="hover:underline underline-offset-4">Board</a>
           <a href="#gallery" className="hover:underline underline-offset-4">Gallery</a>
@@ -51,20 +51,22 @@ export default function Header() {
           <a href="#polls" className="hover:underline underline-offset-4">Polls</a>
         </nav>
 
-        {role !== 'none' ? (
-          <div className="flex items-center gap-2 sm:gap-4">
-            <span className="font-bold text-xs hidden sm:inline-block">
-              {isAdmin ? 'Admin' : 'Member'}
-            </span>
-            <NeoButton color="pink" className="py-1.5 px-2.5 sm:py-2 sm:px-4 text-xs sm:text-sm flex items-center gap-1.5" onClick={handleLogout}>
-              <LogOut size={14} className="sm:w-4 sm:h-4" /> Logout
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+          {role !== 'none' ? (
+            <>
+              <span className="font-bold text-xs hidden sm:inline-block">
+                {isAdmin ? 'Admin' : 'Member'}
+              </span>
+              <NeoButton color="pink" className="py-1.5 px-2.5 sm:py-2 sm:px-4 text-xs sm:text-sm flex items-center gap-1.5" onClick={handleLogout}>
+                <LogOut size={14} className="sm:w-4 sm:h-4" /> Logout
+              </NeoButton>
+            </>
+          ) : (
+            <NeoButton color="cyan" className="py-1.5 px-3 sm:py-2 sm:px-4 text-xs sm:text-sm flex items-center gap-1.5" onClick={() => setShowLogin(true)}>
+              <LogIn size={14} className="sm:w-4 sm:h-4" /> Login
             </NeoButton>
-          </div>
-        ) : (
-          <NeoButton color="cyan" className="py-1.5 px-3 sm:py-2 sm:px-4 text-xs sm:text-sm flex items-center gap-1.5" onClick={() => setShowLogin(true)}>
-            <LogIn size={14} className="sm:w-4 sm:h-4" /> Login
-          </NeoButton>
-        )}
+          )}
+        </div>
       </header>
 
       {showLogin && (
@@ -104,7 +106,7 @@ export default function Header() {
                   required
                 />
               </div>
-              <button type="submit" className="btn-brutal bg-neo-yellow hover:bg-yellow-400 mt-2">
+              <button type="submit" className="btn-brutal bg-neo-cyan hover:bg-cyan-400 mt-2">
                 Login
               </button>
             </form>

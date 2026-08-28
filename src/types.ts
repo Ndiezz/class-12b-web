@@ -8,6 +8,9 @@ export interface Student {
   color: string;
   imageUrl?: string;
   instagram?: string;
+  tiktok?: string;
+  quote?: string;
+  favSubject?: string;
   song?: {
     title: string;
     artist: string;
@@ -30,6 +33,22 @@ export interface GalleryImage {
   id?: string;
   url: string;
   caption: string;
+  reactions?: Record<string, number>;
+  createdAt: number;
+  likes?: string[];
+  comments?: {
+    id: string;
+    nickname: string;
+    text: string;
+    createdAt: number;
+  }[];
+}
+
+export interface CapsuleMessage {
+  id?: string;
+  nickname: string;
+  content: string;
+  unlockDate: number;
   createdAt: number;
 }
 

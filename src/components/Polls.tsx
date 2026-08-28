@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
 import { useRole } from "@/src/hooks/useRole";
@@ -6,6 +7,18 @@ import { Poll } from "@/src/types";
 import { NeoCard } from "./ui/NeoCard";
 import { NeoButton } from "./ui/NeoButton";
 import { Trash2 } from "lucide-react";
+import { motion } from "motion/react";
+
+const PROGRESS_COLORS = [
+  "bg-neo-cyan",
+  "bg-neo-pink",
+  "bg-neo-green",
+  "bg-neo-yellow",
+  "bg-neo-purple",
+  "bg-neo-orange",
+  "bg-neo-lime",
+  "bg-neo-red"
+];
 
 export default function Polls() {
   const [polls, setPolls] = useState<Poll[]>([]);
@@ -36,21 +49,32 @@ export default function Polls() {
         options: validOptions.map(text => ({ text, votes: 0 })),
         createdAt: Date.now()
       });
+      toast.success("Poll created successfully!");
       setNewPollQuestion("");
       setNewPollOptions(["", ""]);
     } catch (err) {
       console.error(err);
+      toast.error("Failed to create poll");
     }
   };
 
   const handleVote = async (poll: Poll, optionIndex: number) => {
-    // In a real app we'd track who voted to prevent double voting. For now it's a simple free-for-all.
+    // Check local storage to prevent multiple votes from same device
+    const votedKey = `voted_poll_${poll.id}`;
+    if (localStorage.getItem(votedKey)) {
+      toast.error("You have already voted on this poll!");
+      return;
+    }
+
     try {
       const newOptions = [...poll.options];
       newOptions[optionIndex].votes += 1;
       await updateDoc(doc(db, "polls", poll.id!), { options: newOptions });
+      localStorage.setItem(votedKey, "true");
+      toast.success("Vote cast successfully!");
     } catch (err) {
       console.error(err);
+      toast.error("Failed to cast vote");
     }
   };
 
@@ -63,7 +87,8 @@ export default function Polls() {
   };
 
   return (
-    <section id="polls" className="p-4 sm:p-8 max-w-7xl mx-auto border-t-4 border-black relative z-10">
+    <section id="polls" className="w-full border-t-4 border-black bg-[#FF9E00]/20 relative z-10">
+    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
       <div className="mb-6 sm:mb-8">
         <span className="bg-neo-cyan border-2 border-black px-2.5 sm:px-3 py-0.5 sm:py-1 font-bold text-[10px] sm:text-xs uppercase tracking-widest text-black shadow-[2px_2px_0_0_#000] sm:shadow-[3px_3px_0_0_#000]">CHAPTER 05</span>
         <h2 className="text-3xl sm:text-5xl md:text-7xl font-black uppercase mt-3 sm:mt-4 break-words">Polls & Voting</h2>
@@ -119,16 +144,20 @@ export default function Polls() {
               <div className="flex flex-col gap-2.5 sm:gap-4">
                 {poll.options.map((opt, i) => {
                   const percentage = totalVotes === 0 ? 0 : Math.round((opt.votes / totalVotes) * 100);
+                  const colorClass = PROGRESS_COLORS[i % PROGRESS_COLORS.length];
                   return (
                     <button 
                       key={i} 
                       onClick={() => handleVote(poll, i)}
                       className="relative w-full border-2 sm:border-4 border-black p-2 sm:p-3 text-left font-bold overflow-hidden group/btn hover:bg-gray-100 transition-colors text-xs sm:text-base"
                     >
-                      <div 
-                        className="absolute top-0 left-0 h-full bg-neo-cyan -z-10 transition-all duration-500 border-r-2 sm:border-r-4 border-black" 
-                        style={{ width: `${percentage}%` }}
-                      ></div>
+                      <motion.div 
+                        initial={{ width: 0 }}
+                        whileInView={{ width: `${percentage}%` }}
+                        viewport={{ once: true }}
+                        transition={{ duration: 1, ease: "easeOut", delay: 0.2 }}
+                        className={`absolute top-0 left-0 h-full ${colorClass} progress-energy -z-10 border-r-2 sm:border-r-4 border-black`} 
+                      />
                       <div className="flex justify-between items-center z-10 gap-2">
                         <span className="truncate">{opt.text}</span>
                         <span className="shrink-0 text-xs sm:text-sm">{percentage}% ({opt.votes})</span>
@@ -147,6 +176,7 @@ export default function Polls() {
           </div>
         )}
       </div>
+    </div>
     </section>
   );
 }

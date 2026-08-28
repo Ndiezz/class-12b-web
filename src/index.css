@@ -76,4 +76,21 @@
     transform: translate(4px, 4px);
     box-shadow: 0 0 0 0 #000;
   }
+  
+  .progress-energy {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 10px,
+      rgba(255, 255, 255, 0.4) 10px,
+      rgba(255, 255, 255, 0.4) 20px
+    );
+    background-size: 28px 28px;
+    animation: moveStripes 1s linear infinite;
+  }
+  
+  @keyframes moveStripes {
+    0% { background-position: 0 0; }
+    100% { background-position: 28px 0; }
+  }
 }

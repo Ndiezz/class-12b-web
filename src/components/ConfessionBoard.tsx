@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import confetti from "canvas-confetti";
+import toast from "react-hot-toast";
 import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
 import { useRole } from "@/src/hooks/useRole";
 import { Message, Student } from "@/src/types";
 import { Trash2, Send, Users, Music, X, Search, Pencil } from "lucide-react";
 
-const COLORS = ["yellow", "cyan", "green", "pink", "orange", "purple", "blue", "lime", "red"] as const;
+const COLORS: string[] = ["yellow", "cyan", "green", "pink", "orange", "purple", "blue", "lime", "red"];
 const COLOR_CLASSES: Record<string, string> = {
   yellow: "bg-neo-yellow",
   cyan: "bg-neo-cyan",
@@ -24,6 +27,9 @@ export default function ConfessionBoard() {
   const { isAdmin } = useRole();
   
   // Rate Limiting Logic
+  
+
+
   const canPost = () => {
     const historyString = localStorage.getItem("confession_timestamps");
     if (!historyString) return true;
@@ -53,7 +59,7 @@ export default function ConfessionBoard() {
   const [newMessage, setNewMessage] = useState({ 
     nickname: "", 
     content: "", 
-    color: COLORS[Math.floor(Math.random() * COLORS.length)] 
+    color: COLORS[0] 
   });
   
   // Modals & Optional Features
@@ -66,6 +72,15 @@ export default function ConfessionBoard() {
   
   const [selectedTo, setSelectedTo] = useState<string | null>(null);
   const [selectedSong, setSelectedSong] = useState<{title: string, artist: string, coverUrl: string} | null>(null);
+
+  useEffect(() => {
+    if (showToModal || showSongModal || showSpamModal || showEditModal) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [showToModal, showSongModal, showSpamModal, showEditModal]);
   
   const [songSearch, setSongSearch] = useState("");
   const [isSearching, setIsSearching] = useState(false);
@@ -122,13 +137,23 @@ export default function ConfessionBoard() {
 
       await addDoc(collection(db, "messages"), msgData);
       
+      confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 },
+        colors: ['#FFE81E', '#FF57B6', '#00E5FF', '#00E676', '#B800FF']
+      });
+      
       if (!isAdmin) recordPost();
       
-      setNewMessage({ nickname: "", content: "", color: COLORS[Math.floor(Math.random() * COLORS.length)] });
+      toast.success("Note sent successfully!");
+      
+      setNewMessage({ nickname: "", content: "", color: COLORS[0] });
       setSelectedTo(null);
       setSelectedSong(null);
     } catch (err) {
       console.error(err);
+      toast.error("Failed to send note!");
     }
   };
 
@@ -157,7 +182,8 @@ export default function ConfessionBoard() {
   };
 
   return (
-    <section id="board" className="p-4 sm:p-8 max-w-7xl mx-auto border-t-4 border-black graph-paper-pink relative">
+    <section id="board" className="w-full border-t-4 border-black graph-paper-pink relative z-10">
+    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
       <div className="mb-6 sm:mb-8">
         <span className="bg-neo-green border-2 border-black px-2.5 sm:px-3 py-0.5 sm:py-1 font-bold text-[10px] sm:text-xs uppercase tracking-widest text-black shadow-[2px_2px_0_0_#000] sm:shadow-[3px_3px_0_0_#000]">CHAPTER 02</span>
         <h2 className="text-3xl sm:text-5xl md:text-7xl font-black uppercase mt-3 sm:mt-6 tracking-tight break-words">Confession Board</h2>
@@ -218,7 +244,7 @@ export default function ConfessionBoard() {
       </div>
 
       {/* Modals for To and Song */}
-      {showToModal && (
+      {showToModal && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white border-4 border-black p-4 sm:p-6 w-full max-w-md shadow-[6px_6px_0_0_#000] max-h-[80vh] flex flex-col">
             <div className="flex justify-between items-center mb-4">
@@ -228,7 +254,7 @@ export default function ConfessionBoard() {
             <div className="overflow-y-auto flex-1 border-2 border-black p-2 space-y-1 sm:space-y-2 text-xs sm:text-sm">
               <button 
                 onClick={() => { setSelectedTo(null); setShowToModal(false); }}
-                className="w-full text-left p-2 hover:bg-neo-yellow font-bold uppercase border-b-2 border-dashed border-gray-300"
+                className="w-full text-left p-2 hover:bg-neo-cyan font-bold uppercase border-b-2 border-dashed border-gray-300"
               >
                 (Everyone)
               </button>
@@ -244,9 +270,9 @@ export default function ConfessionBoard() {
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
 
-      {showSongModal && (
+      {showSongModal && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white border-4 border-black p-4 sm:p-6 w-full max-w-md shadow-[6px_6px_0_0_#000] max-h-[80vh] flex flex-col">
             <div className="flex justify-between items-center mb-4">
@@ -262,7 +288,7 @@ export default function ConfessionBoard() {
                 value={songSearch}
                 onChange={e => setSongSearch(e.target.value)}
               />
-              <button type="submit" className="btn-brutal bg-neo-yellow px-3" disabled={isSearching}>
+              <button type="submit" className="btn-brutal bg-neo-cyan px-3" disabled={isSearching}>
                 <Search size={18} />
               </button>
             </form>
@@ -306,9 +332,9 @@ export default function ConfessionBoard() {
             )}
           </div>
         </div>
-      )}
+      , document.body)}
 
-      {showSpamModal && (
+      {showSpamModal && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-neo-red border-4 border-black p-6 sm:p-8 w-full max-w-md shadow-[8px_8px_0_0_#000] text-center">
             <h3 className="font-black text-2xl sm:text-3xl uppercase mb-3 text-white">Hold Up! 🛑</h3>
@@ -323,9 +349,9 @@ export default function ConfessionBoard() {
             </button>
           </div>
         </div>
-      )}
+      , document.body)}
 
-      {showEditModal && editingMessage && (
+      {showEditModal && editingMessage && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white border-4 border-black p-4 sm:p-6 w-full max-w-md shadow-[6px_6px_0_0_#000] flex flex-col">
             <div className="flex justify-between items-center mb-4">
@@ -359,7 +385,7 @@ export default function ConfessionBoard() {
             </form>
           </div>
         </div>
-      )}
+      , document.body)}
 
       {/* Masonry Layout: 3 columns on mobile, up to 6 on desktop */}
       <div className="columns-3 sm:columns-3 md:columns-4 lg:columns-6 gap-2 sm:gap-4">
@@ -428,6 +454,7 @@ export default function ConfessionBoard() {
           No confessions yet. Be the first!
         </div>
       )}
+    </div>
     </section>
   );
 }

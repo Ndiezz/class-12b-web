@@ -73,42 +73,43 @@ export default function Timetable() {
   const displayEntries = entries.length > 0 ? entries : DEFAULT_TIMETABLE;
 
   return (
-    <section id="timetable" className="p-4 sm:p-8 max-w-7xl mx-auto border-t-4 border-black relative z-10">
+    <section id="timetable" className="w-full border-t-4 border-black bg-[#AEEA00]/20 relative z-10">
+    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
       <div className="mb-6 sm:mb-8">
-        <span className="bg-neo-yellow border-2 border-black px-2.5 sm:px-3 py-0.5 sm:py-1 font-bold text-[10px] sm:text-xs uppercase tracking-widest text-black shadow-[2px_2px_0_0_#000] sm:shadow-[3px_3px_0_0_#000]">CHAPTER 04</span>
+        <span className="bg-neo-cyan border-2 border-black px-2.5 sm:px-3 py-0.5 sm:py-1 font-bold text-[10px] sm:text-xs uppercase tracking-widest text-black shadow-[2px_2px_0_0_#000] sm:shadow-[3px_3px_0_0_#000]">CHAPTER 04</span>
         <h2 className="text-3xl sm:text-5xl md:text-7xl font-black uppercase mt-3 sm:mt-4 break-words">Jadwal Pelajaran</h2>
       </div>
 
       {isAdmin && (
         <NeoCard color="white" className="p-4 sm:p-6 mb-6 sm:mb-12">
-          <h3 className="font-bold text-lg sm:text-xl mb-4 uppercase">Admin: Add Period</h3>
+          <h3 className="font-bold text-lg sm:text-xl mb-4 uppercase">Admin: Tambah Periode</h3>
           <form onSubmit={handleAdd} className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 items-end">
             <div className="flex flex-col">
-              <label className="font-bold text-xs sm:text-sm">Period (e.g. P1)</label>
+              <label className="font-bold text-xs sm:text-sm">Periode (mis. P1)</label>
               <input type="text" className="input-brutal text-xs sm:text-sm" maxLength={5} value={newEntry.period} onChange={e => setNewEntry({...newEntry, period: e.target.value.toUpperCase()})} required />
             </div>
             <div className="flex flex-col">
-              <label className="font-bold text-xs sm:text-sm">Time</label>
+              <label className="font-bold text-xs sm:text-sm">Waktu</label>
               <input type="text" className="input-brutal text-xs sm:text-sm" placeholder="07:00 - 08:30" value={newEntry.time} onChange={e => setNewEntry({...newEntry, time: e.target.value})} required />
             </div>
             <div className="flex flex-col">
-              <label className="font-bold text-xs sm:text-sm">Monday</label>
+              <label className="font-bold text-xs sm:text-sm">Senin</label>
               <input type="text" className="input-brutal text-xs sm:text-sm" value={newEntry.monday} onChange={e => setNewEntry({...newEntry, monday: e.target.value})} />
             </div>
             <div className="flex flex-col">
-              <label className="font-bold text-xs sm:text-sm">Tuesday</label>
+              <label className="font-bold text-xs sm:text-sm">Selasa</label>
               <input type="text" className="input-brutal text-xs sm:text-sm" value={newEntry.tuesday} onChange={e => setNewEntry({...newEntry, tuesday: e.target.value})} />
             </div>
             <div className="flex flex-col">
-              <label className="font-bold text-xs sm:text-sm">Wednesday</label>
+              <label className="font-bold text-xs sm:text-sm">Rabu</label>
               <input type="text" className="input-brutal text-xs sm:text-sm" value={newEntry.wednesday} onChange={e => setNewEntry({...newEntry, wednesday: e.target.value})} />
             </div>
             <div className="flex flex-col">
-              <label className="font-bold text-xs sm:text-sm">Thursday</label>
+              <label className="font-bold text-xs sm:text-sm">Kamis</label>
               <input type="text" className="input-brutal text-xs sm:text-sm" value={newEntry.thursday} onChange={e => setNewEntry({...newEntry, thursday: e.target.value})} />
             </div>
             <div className="flex flex-col">
-              <label className="font-bold text-xs sm:text-sm">Friday</label>
+              <label className="font-bold text-xs sm:text-sm">Jumat</label>
               <input type="text" className="input-brutal text-xs sm:text-sm" value={newEntry.friday} onChange={e => setNewEntry({...newEntry, friday: e.target.value})} />
             </div>
             <NeoButton type="submit" color="yellow" className="h-[44px] text-xs sm:text-sm">Add</NeoButton>
@@ -126,7 +127,7 @@ export default function Timetable() {
               onClick={() => setActiveDay(day.key)}
               className={`flex-1 py-1.5 px-2 border-2 border-black font-black text-xs uppercase tracking-wider text-center transition-all ${
                 activeDay === day.key
-                  ? "bg-neo-yellow shadow-[2px_2px_0_0_#000] -translate-y-0.5"
+                  ? "bg-neo-cyan shadow-[2px_2px_0_0_#000] -translate-y-0.5"
                   : "bg-white opacity-80"
               }`}
             >
@@ -178,12 +179,12 @@ export default function Timetable() {
         <table className="w-full text-left font-bold border-collapse">
           <thead>
             <tr className="border-b-4 border-black bg-white">
-              <th className="p-2 lg:p-3 border-r-4 border-black w-24 uppercase text-[10px] lg:text-xs">Period</th>
-              <th className={`p-2 lg:p-3 border-r-4 border-black uppercase text-[10px] lg:text-xs ${currentDay === 'monday' ? 'bg-neo-yellow' : ''}`}>Monday</th>
-              <th className={`p-2 lg:p-3 border-r-4 border-black uppercase text-[10px] lg:text-xs ${currentDay === 'tuesday' ? 'bg-neo-yellow' : ''}`}>Tuesday</th>
-              <th className={`p-2 lg:p-3 border-r-4 border-black uppercase text-[10px] lg:text-xs ${currentDay === 'wednesday' ? 'bg-neo-yellow' : ''}`}>Wednesday</th>
-              <th className={`p-2 lg:p-3 border-r-4 border-black uppercase text-[10px] lg:text-xs ${currentDay === 'thursday' ? 'bg-neo-yellow' : ''}`}>Thursday</th>
-              <th className={`p-2 lg:p-3 uppercase text-[10px] lg:text-xs ${currentDay === 'friday' ? 'bg-neo-yellow' : ''}`}>Friday</th>
+              <th className="p-2 lg:p-3 border-r-4 border-black w-24 uppercase text-[10px] lg:text-xs">Periode</th>
+              <th className={`p-2 lg:p-3 border-r-4 border-black uppercase text-[10px] lg:text-xs ${currentDay === 'monday' ? 'bg-neo-cyan' : ''}`}>Senin</th>
+              <th className={`p-2 lg:p-3 border-r-4 border-black uppercase text-[10px] lg:text-xs ${currentDay === 'tuesday' ? 'bg-neo-cyan' : ''}`}>Selasa</th>
+              <th className={`p-2 lg:p-3 border-r-4 border-black uppercase text-[10px] lg:text-xs ${currentDay === 'wednesday' ? 'bg-neo-cyan' : ''}`}>Rabu</th>
+              <th className={`p-2 lg:p-3 border-r-4 border-black uppercase text-[10px] lg:text-xs ${currentDay === 'thursday' ? 'bg-neo-cyan' : ''}`}>Kamis</th>
+              <th className={`p-2 lg:p-3 uppercase text-[10px] lg:text-xs ${currentDay === 'friday' ? 'bg-neo-cyan' : ''}`}>Jumat</th>
             </tr>
           </thead>
           <tbody>
@@ -198,11 +199,11 @@ export default function Timetable() {
                     </button>
                   )}
                 </td>
-                <td className={`p-2 lg:p-3 border-r-4 border-black text-[10px] lg:text-xs break-words ${currentDay === 'monday' ? 'bg-neo-yellow/20' : ''}`}>{entry.monday || "-"}</td>
-                <td className={`p-2 lg:p-3 border-r-4 border-black text-[10px] lg:text-xs break-words ${currentDay === 'tuesday' ? 'bg-neo-yellow/20' : ''}`}>{entry.tuesday || "-"}</td>
-                <td className={`p-2 lg:p-3 border-r-4 border-black text-[10px] lg:text-xs break-words ${currentDay === 'wednesday' ? 'bg-neo-yellow/20' : ''}`}>{entry.wednesday || "-"}</td>
-                <td className={`p-2 lg:p-3 border-r-4 border-black text-[10px] lg:text-xs break-words ${currentDay === 'thursday' ? 'bg-neo-yellow/20' : ''}`}>{entry.thursday || "-"}</td>
-                <td className={`p-2 lg:p-3 text-[10px] lg:text-xs break-words ${currentDay === 'friday' ? 'bg-neo-yellow/20' : ''}`}>{entry.friday || "-"}</td>
+                <td className={`p-2 lg:p-3 border-r-4 border-black text-[10px] lg:text-xs break-words ${currentDay === 'monday' ? 'bg-neo-cyan/20' : ''}`}>{entry.monday || "-"}</td>
+                <td className={`p-2 lg:p-3 border-r-4 border-black text-[10px] lg:text-xs break-words ${currentDay === 'tuesday' ? 'bg-neo-cyan/20' : ''}`}>{entry.tuesday || "-"}</td>
+                <td className={`p-2 lg:p-3 border-r-4 border-black text-[10px] lg:text-xs break-words ${currentDay === 'wednesday' ? 'bg-neo-cyan/20' : ''}`}>{entry.wednesday || "-"}</td>
+                <td className={`p-2 lg:p-3 border-r-4 border-black text-[10px] lg:text-xs break-words ${currentDay === 'thursday' ? 'bg-neo-cyan/20' : ''}`}>{entry.thursday || "-"}</td>
+                <td className={`p-2 lg:p-3 text-[10px] lg:text-xs break-words ${currentDay === 'friday' ? 'bg-neo-cyan/20' : ''}`}>{entry.friday || "-"}</td>
               </tr>
             ))}
             {entries.length === 0 && (
@@ -213,6 +214,7 @@ export default function Timetable() {
           </tbody>
         </table>
       </div>
+    </div>
     </section>
   );
 }

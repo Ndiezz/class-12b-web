@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { collection, onSnapshot, addDoc, deleteDoc, doc } from "firebase/firestore";
 import { useRole } from "@/src/hooks/useRole";
 import { db } from "@/src/lib/firebase";
@@ -10,7 +11,7 @@ import { Trash2, Music, X, Search, Instagram } from "lucide-react";
 const COLORS = ["white", "yellow", "cyan", "green", "pink", "orange", "purple", "blue", "lime", "red"] as const;
 const COLOR_CLASSES: Record<string, string> = {
   white: "bg-white",
-  yellow: "bg-neo-yellow",
+  yellow: "bg-neo-cyan",
   cyan: "bg-neo-cyan",
   green: "bg-neo-green",
   pink: "bg-neo-pink",
@@ -35,7 +36,10 @@ const parseImageUrl = (url: string) => {
 export default function Roster() {
   const [students, setStudents] = useState<Student[]>([]);
   const { isAdmin } = useRole();
-  const [newStudent, setNewStudent] = useState({ name: "", initials: "", role: "", funFact: "", birthday: "", color: "white", imageUrl: "", instagram: "" });
+  const [newStudent, setNewStudent] = useState({ name: "", initials: "", role: "", funFact: "", birthday: "", color: "white", imageUrl: "", instagram: "", tiktok: "", quote: "", favSubject: "" });
+  
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
   
   // Song functionality
   const [showSongModal, setShowSongModal] = useState(false);
@@ -43,6 +47,7 @@ export default function Roster() {
   const [songSearch, setSongSearch] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [songResults, setSongResults] = useState<any[]>([]);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "students"), (snapshot) => {
@@ -75,7 +80,7 @@ export default function Roster() {
       if (selectedSong) studentData.song = selectedSong;
       
       await addDoc(collection(db, "students"), studentData);
-      setNewStudent({ name: "", initials: "", role: "", funFact: "", birthday: "", color: "white", imageUrl: "", instagram: "" });
+      setNewStudent({ name: "", initials: "", role: "", funFact: "", birthday: "", color: "white", imageUrl: "", instagram: "", tiktok: "", quote: "", favSubject: "" });
       setSelectedSong(null);
     } catch (err) {
       console.error(err);
@@ -90,11 +95,40 @@ export default function Roster() {
     }
   };
 
+  
+  useEffect(() => {
+    if (selectedStudent || showSongModal) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => { document.body.style.overflow = ""; };
+  }, [selectedStudent, showSongModal]);
+
+  const filteredStudents = students.filter(student => 
+    student.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    student.initials.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   return (
-    <section id="roster" className="p-4 sm:p-8 max-w-7xl mx-auto relative z-10">
-      <div className="mb-6 sm:mb-8">
-        <span className="bg-neo-yellow border-2 border-black px-2.5 sm:px-3 py-0.5 sm:py-1 font-bold text-[10px] sm:text-xs uppercase tracking-widest text-black shadow-[2px_2px_0_0_#000] sm:shadow-[3px_3px_0_0_#000]">CHAPTER 01</span>
-        <h2 className="text-3xl sm:text-5xl md:text-7xl font-black uppercase mt-3 sm:mt-4 break-words">Anggota</h2>
+    <section id="roster" className="w-full relative z-10 bg-neo-yellow/20">
+    <div className="p-4 sm:p-8 max-w-7xl mx-auto">
+      <div className="mb-6 sm:mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <span className="bg-neo-cyan border-2 border-black px-2.5 sm:px-3 py-0.5 sm:py-1 font-bold text-[10px] sm:text-xs uppercase tracking-widest text-black shadow-[2px_2px_0_0_#000] sm:shadow-[3px_3px_0_0_#000]">CHAPTER 01</span>
+          <h2 className="text-3xl sm:text-5xl md:text-7xl font-black uppercase mt-3 sm:mt-4 break-words">Anggota</h2>
+        </div>
+        
+        <div className="w-full md:w-auto md:min-w-[300px] relative">
+          <input
+            type="text"
+            placeholder="Search student by name..."
+            className="input-brutal w-full pl-10 h-10 py-1"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+        </div>
       </div>
 
       {isAdmin && (
@@ -122,6 +156,18 @@ export default function Roster() {
               <input type="text" className="input-brutal w-full" placeholder="@username" value={newStudent.instagram} onChange={e => setNewStudent({...newStudent, instagram: e.target.value})} />
             </div>
             <div className="flex flex-col flex-1 min-w-[120px]">
+              <label className="font-bold text-xs sm:text-sm">TikTok Handle</label>
+              <input type="text" className="input-brutal w-full" placeholder="@username" value={newStudent.tiktok} onChange={e => setNewStudent({...newStudent, tiktok: e.target.value})} />
+            </div>
+            <div className="flex flex-col flex-1 min-w-[120px]">
+              <label className="font-bold text-xs sm:text-sm">Quote / Motto</label>
+              <input type="text" className="input-brutal w-full" placeholder="Life is good..." value={newStudent.quote} onChange={e => setNewStudent({...newStudent, quote: e.target.value})} />
+            </div>
+            <div className="flex flex-col flex-1 min-w-[120px]">
+              <label className="font-bold text-xs sm:text-sm">Fav Subject</label>
+              <input type="text" className="input-brutal w-full" placeholder="Math, Art..." value={newStudent.favSubject} onChange={e => setNewStudent({...newStudent, favSubject: e.target.value})} />
+            </div>
+            <div className="flex flex-col flex-1 min-w-[120px]">
               <label className="font-bold text-xs sm:text-sm">Fun Fact (optional)</label>
               <input type="text" className="input-brutal w-full" value={newStudent.funFact} onChange={e => setNewStudent({...newStudent, funFact: e.target.value})} />
             </div>
@@ -146,7 +192,7 @@ export default function Roster() {
       )}
 
       {/* Song Modal */}
-      {showSongModal && (
+      {showSongModal && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white border-4 border-black p-4 sm:p-6 w-full max-w-md shadow-[6px_6px_0_0_#000] max-h-[80vh] flex flex-col">
             <div className="flex justify-between items-center mb-4">
@@ -162,7 +208,7 @@ export default function Roster() {
                 value={songSearch}
                 onChange={e => setSongSearch(e.target.value)}
               />
-              <button type="submit" className="btn-brutal bg-neo-yellow px-3" disabled={isSearching}>
+              <button type="submit" className="btn-brutal bg-neo-cyan px-3" disabled={isSearching}>
                 <Search size={18} />
               </button>
             </form>
@@ -206,17 +252,21 @@ export default function Roster() {
             )}
           </div>
         </div>
-      )}
+      , document.body)}
 
       {/* Grid: 2 per row on mobile, up to 4 on desktop for larger polaroid cards */}
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
-        {students.map((student) => {
+        {filteredStudents.map((student) => {
           const bgClass = COLOR_CLASSES[student.color] || "bg-white";
           
           return (
-            <div key={student.id} className={`bg-white texture-polkadot border-2 sm:border-4 border-black p-2 sm:p-3 pb-3 sm:pb-4 relative group flex flex-col shadow-[4px_4px_0_0_#000] sm:shadow-[6px_6px_0_0_#000] transform transition-transform hover:-translate-y-1 hover:rotate-1`}>
+            <div 
+              key={student.id} 
+              onClick={() => setSelectedStudent(student)}
+              className={`bg-white texture-polkadot border-2 sm:border-4 border-black p-2 sm:p-3 pb-3 sm:pb-4 relative group flex flex-col shadow-[4px_4px_0_0_#000] sm:shadow-[6px_6px_0_0_#000] transform transition-transform hover:-translate-y-1 hover:rotate-1 cursor-pointer`}
+            >
               {isAdmin && (
-                <button onClick={() => handleDelete(student.id!)} className="absolute top-1 right-1 sm:top-2 sm:right-2 text-black hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity z-50 bg-white border border-black rounded-full p-0.5 sm:p-1 shadow-[1px_1px_0_0_#000]">
+                <button onClick={(e) => { e.stopPropagation(); handleDelete(student.id!); }} className="absolute top-1 right-1 sm:top-2 sm:right-2 text-black hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity z-50 bg-white border border-black rounded-full p-0.5 sm:p-1 shadow-[1px_1px_0_0_#000]">
                   <Trash2 size={12} className="sm:w-3.5 sm:h-3.5" />
                 </button>
               )}
@@ -255,7 +305,7 @@ export default function Roster() {
                     </span>
                   )}
                   {student.instagram && (
-                    <a href={student.instagram.startsWith('http') ? student.instagram : `https://instagram.com/${student.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="ml-auto bg-white border-2 border-black p-1 shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] transition-all">
+                    <a href={student.instagram.startsWith('http') ? student.instagram : `https://instagram.com/${student.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="ml-auto bg-white border-2 border-black p-1 shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] transition-all">
                       <Instagram size={12} className="sm:w-3.5 sm:h-3.5" />
                     </a>
                   )}
@@ -282,12 +332,112 @@ export default function Roster() {
             </div>
           );
         })}
-        {students.length === 0 && (
+        {filteredStudents.length === 0 && (
           <div className="col-span-full text-center p-6 sm:p-8 border-2 sm:border-4 border-black border-dashed font-bold text-xs sm:text-sm bg-white">
-            No students added yet. Admin needs to add them!
+            {students.length === 0 ? "No students added yet. Admin needs to add them!" : "No students found matching your search."}
           </div>
         )}
       </div>
+
+      {/* Student Profile Modal */}
+      {selectedStudent && typeof document !== "undefined" && createPortal(
+        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setSelectedStudent(null)}>
+          <div className="bg-white border-4 border-black p-4 sm:p-8 w-full max-w-2xl shadow-[8px_8px_0_0_#000] max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="font-black text-3xl sm:text-5xl uppercase tracking-tighter leading-none mb-2">{selectedStudent.name}</h3>
+                <div className="flex flex-wrap gap-2">
+                  <span className={`px-2 py-1 border-2 border-black font-bold uppercase text-xs shadow-[2px_2px_0_0_#000] ${COLOR_CLASSES[selectedStudent.color] || "bg-white"}`}>
+                    {selectedStudent.initials}
+                  </span>
+                  {selectedStudent.role && (
+                    <span className="px-2 py-1 border-2 border-black font-bold uppercase text-xs shadow-[2px_2px_0_0_#000] bg-neo-cyan">
+                      {selectedStudent.role}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <button onClick={() => setSelectedStudent(null)} className="p-2 hover:bg-gray-200 border-2 border-black rounded-full shrink-0"><X size={24} /></button>
+            </div>
+            
+            <div className="grid md:grid-cols-2 gap-6 sm:gap-8">
+              {/* Image Column */}
+              <div className="relative border-4 border-black aspect-[4/5] bg-gray-100 shadow-[6px_6px_0_0_#000]">
+                {selectedStudent.imageUrl ? (
+                  <img src={parseImageUrl(selectedStudent.imageUrl)} alt={selectedStudent.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                ) : (
+                  <div className={`w-full h-full ${COLOR_CLASSES[selectedStudent.color] || "bg-white"} opacity-80 flex items-center justify-center`}>
+                    <span className="font-black text-8xl opacity-30">{selectedStudent.initials}</span>
+                  </div>
+                )}
+              </div>
+              
+              {/* Details Column */}
+              <div className="flex flex-col gap-6">
+                {selectedStudent.quote && (
+                  <div className="bg-neo-cyan p-4 border-2 border-black shadow-[4px_4px_0_0_#000]">
+                    <p className="font-bold text-lg italic leading-tight">"{selectedStudent.quote}"</p>
+                    <p className="text-xs font-black uppercase tracking-widest mt-2 opacity-70">— Motto</p>
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  {selectedStudent.birthday && (
+                    <div>
+                      <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-gray-500 mb-1">Birthday</p>
+                      <p className="font-bold text-base sm:text-lg">🎂 {selectedStudent.birthday}</p>
+                    </div>
+                  )}
+
+                  {selectedStudent.favSubject && (
+                    <div>
+                      <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-gray-500 mb-1">Favorite Subject</p>
+                      <p className="font-bold text-base sm:text-lg">📚 {selectedStudent.favSubject}</p>
+                    </div>
+                  )}
+
+                  {selectedStudent.funFact && (
+                    <div>
+                      <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-gray-500 mb-1">Fun Fact</p>
+                      <p className="font-bold text-base leading-snug">{selectedStudent.funFact}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Socials & Music */}
+                <div className="mt-auto space-y-4 pt-4 border-t-4 border-black">
+                  {(selectedStudent.instagram || selectedStudent.tiktok) && (
+                    <div className="flex gap-2">
+                      {selectedStudent.instagram && (
+                        <a href={selectedStudent.instagram.startsWith('http') ? selectedStudent.instagram : `https://instagram.com/${selectedStudent.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="flex-1 bg-white border-2 border-black p-2 flex items-center justify-center gap-2 font-bold text-xs sm:text-sm hover:-translate-y-1 hover:shadow-[4px_4px_0_0_#000] transition-all">
+                          <Instagram size={16} /> Instagram
+                        </a>
+                      )}
+                      {selectedStudent.tiktok && (
+                        <a href={selectedStudent.tiktok.startsWith('http') ? selectedStudent.tiktok : `https://tiktok.com/${selectedStudent.tiktok.startsWith('@') ? '' : '@'}${selectedStudent.tiktok.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="flex-1 bg-black text-white border-2 border-black p-2 flex items-center justify-center gap-2 font-bold text-xs sm:text-sm hover:-translate-y-1 hover:shadow-[4px_4px_0_0_#000] transition-all">
+                          TikTok
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {selectedStudent.song && (
+                    <div className="bg-white border-2 border-black p-2 flex items-center gap-3">
+                      <img src={selectedStudent.song.coverUrl} alt="Cover" className="w-12 h-12 border-2 border-black shrink-0" />
+                      <div className="overflow-hidden min-w-0 flex-1">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-neo-pink mb-0.5">Theme Song</p>
+                        <p className="font-bold text-sm truncate uppercase leading-none mb-1">{selectedStudent.song.title}</p>
+                        <p className="text-xs truncate font-medium text-gray-600">{selectedStudent.song.artist}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      , document.body)}
+    </div>
     </section>
   );
 }
