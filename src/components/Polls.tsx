@@ -49,12 +49,12 @@ export default function Polls() {
         options: validOptions.map(text => ({ text, votes: 0 })),
         createdAt: Date.now()
       });
-      toast.success("Poll created successfully!");
+      toast.success("Poling berhasil dibuat!", { id: 'app-toast', duration: 3000 });
       setNewPollQuestion("");
       setNewPollOptions(["", ""]);
     } catch (err) {
       console.error(err);
-      toast.error("Failed to create poll");
+      toast.error("Gagal membuat poling!", { id: 'app-toast', duration: 3000 });
     }
   };
 
@@ -62,7 +62,7 @@ export default function Polls() {
     // Check local storage to prevent multiple votes from same device
     const votedKey = `voted_poll_${poll.id}`;
     if (localStorage.getItem(votedKey)) {
-      toast.error("You have already voted on this poll!");
+      toast.error("Kamu sudah memilih pada poling ini!", { id: 'app-toast', duration: 3000 });
       return;
     }
 
@@ -71,10 +71,10 @@ export default function Polls() {
       newOptions[optionIndex].votes += 1;
       await updateDoc(doc(db, "polls", poll.id!), { options: newOptions });
       localStorage.setItem(votedKey, "true");
-      toast.success("Vote cast successfully!");
+      toast.success("Suara berhasil diberikan!", { id: 'app-toast', duration: 3000 });
     } catch (err) {
       console.error(err);
-      toast.error("Failed to cast vote");
+      toast.error("Gagal memberikan suara!", { id: 'app-toast', duration: 3000 });
     }
   };
 
@@ -156,9 +156,9 @@ export default function Polls() {
                         whileInView={{ width: `${percentage}%` }}
                         viewport={{ once: true }}
                         transition={{ duration: 1, ease: "easeOut", delay: 0.2 }}
-                        className={`absolute top-0 left-0 h-full ${colorClass} progress-energy -z-10 border-r-2 sm:border-r-4 border-black`} 
+                        className={`absolute top-0 left-0 h-full ${colorClass} progress-energy z-0 border-r-2 sm:border-r-4 border-black`} 
                       />
-                      <div className="flex justify-between items-center z-10 gap-2">
+                      <div className="flex justify-between items-center relative z-10 gap-2">
                         <span className="truncate">{opt.text}</span>
                         <span className="shrink-0 text-xs sm:text-sm">{percentage}% ({opt.votes})</span>
                       </div>

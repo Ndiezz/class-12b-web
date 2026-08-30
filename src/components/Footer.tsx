@@ -2,8 +2,10 @@ import { useState } from "react";
 import { NeoButton } from "./ui/NeoButton";
 import { NeoCard } from "./ui/NeoCard";
 
+
 export default function Footer() {
   const [sent, setSent] = useState(false);
+
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -40,6 +42,8 @@ export default function Footer() {
         <NeoCard color="cyan" className="p-4 sm:p-8 text-center max-w-md mx-auto md:mr-0 w-full">
           <h3 className="font-black text-xl sm:text-2xl mb-2">Class 12-B</h3>
           <p className="font-bold text-xs sm:text-sm mb-4 sm:mb-6">Website maintained by the admin team.</p>
+          
+          
           <div className="text-[10px] sm:text-xs font-bold uppercase tracking-widest border-t-2 sm:border-t-4 border-black pt-3 sm:pt-4">
             © 2026 CLASS 12-B. ALL RIGHTS RESERVED.
           </div>

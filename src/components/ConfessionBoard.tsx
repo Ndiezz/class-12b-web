@@ -2,13 +2,15 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import confetti from "canvas-confetti";
 import toast from "react-hot-toast";
-import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, setDoc } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
 import { useRole } from "@/src/hooks/useRole";
 import { Message, Student } from "@/src/types";
-import { Trash2, Send, Users, Music, X, Search, Pencil } from "lucide-react";
+import { Trash2, Send, Users, Music, X, Search, Pencil, Download, Eye } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import html2canvas from "html2canvas";
 
-const COLORS: string[] = ["yellow", "cyan", "green", "pink", "orange", "purple", "blue", "lime", "red"];
+const COLORS: string[] = ["yellow", "cyan", "green", "pink", "orange", "purple", "blue", "lime", "red", "mahogany"];
 const COLOR_CLASSES: Record<string, string> = {
   yellow: "bg-neo-yellow",
   cyan: "bg-neo-cyan",
@@ -19,12 +21,35 @@ const COLOR_CLASSES: Record<string, string> = {
   blue: "bg-neo-blue",
   lime: "bg-neo-lime",
   red: "bg-neo-red",
+  mahogany: "bg-neo-mahogany",
 };
 
 export default function ConfessionBoard() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const { isAdmin } = useRole();
+  const [revealedNotes, setRevealedNotes] = useState<Set<string>>(new Set());
+  const [selectedNglNote, setSelectedNglNote] = useState<Message | null>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('revealed_notes');
+    if (saved) {
+      try {
+        setRevealedNotes(new Set(JSON.parse(saved)));
+      } catch(e){}
+    }
+  }, []);
+
+  const handleReveal = (msg: Message) => {
+    if (!revealedNotes.has(msg.id!)) {
+      const newSet = new Set(revealedNotes);
+      newSet.add(msg.id!);
+      setRevealedNotes(newSet);
+      localStorage.setItem('revealed_notes', JSON.stringify(Array.from(newSet)));
+    }
+    setSelectedNglNote(msg);
+  };
+
   
   // Rate Limiting Logic
   
@@ -59,7 +84,7 @@ export default function ConfessionBoard() {
   const [newMessage, setNewMessage] = useState({ 
     nickname: "", 
     content: "", 
-    color: COLORS[0] 
+    color: COLORS[Math.floor(Math.random() * COLORS.length)] 
   });
   
   // Modals & Optional Features
@@ -146,20 +171,34 @@ export default function ConfessionBoard() {
       
       if (!isAdmin) recordPost();
       
-      toast.success("Note sent successfully!");
+      toast.success("Pesan berhasil dikirim!", { id: 'app-toast', duration: 3000 });
       
-      setNewMessage({ nickname: "", content: "", color: COLORS[0] });
+      setNewMessage({ nickname: "", content: "", color: COLORS[Math.floor(Math.random() * COLORS.length)] });
       setSelectedTo(null);
       setSelectedSong(null);
     } catch (err) {
       console.error(err);
-      toast.error("Failed to send note!");
+      toast.error("Gagal mengirim pesan!", { id: 'app-toast', duration: 3000 });
     }
   };
 
   const handleDelete = async (id: string) => {
+    const msgToDel = messages.find(m => m.id === id);
+    if (!msgToDel) return;
     try {
       await deleteDoc(doc(db, "messages", id));
+      toast((t) => (
+        <div className="flex items-center gap-3">
+          <span className="font-bold text-sm">Note deleted</span>
+          <button onClick={() => {
+            toast.dismiss(t.id);
+            setDoc(doc(db, "messages", id), msgToDel);
+            toast.success("Note restored!");
+          }} className="bg-neo-cyan px-2 py-1 font-bold border-2 border-[#000] shadow-[2px_2px_0_0_#000] text-xs">
+            UNDO
+          </button>
+        </div>
+      ), { duration: 4000 });
     } catch (err) {
       console.error(err);
     }
@@ -168,12 +207,34 @@ export default function ConfessionBoard() {
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingMessage) return;
+    
+    const originalMsg = messages.find(m => m.id === editingMessage.id);
+    if (!originalMsg) return;
+    
     try {
       await updateDoc(doc(db, "messages", editingMessage.id), {
         content: editingMessage.content,
         isEdited: true,
         editReason: editingMessage.editReason || "Censored by admin"
       });
+      
+      toast((t) => (
+        <div className="flex items-center gap-3">
+          <span className="font-bold text-sm">Note updated</span>
+          <button onClick={() => {
+            toast.dismiss(t.id);
+            updateDoc(doc(db, "messages", originalMsg.id!), {
+              content: originalMsg.content,
+              isEdited: originalMsg.isEdited || false,
+              editReason: originalMsg.editReason || null
+            });
+            toast.success("Edit undone!");
+          }} className="bg-neo-cyan px-2 py-1 font-bold border-2 border-[#000] shadow-[2px_2px_0_0_#000] text-xs">
+            UNDO
+          </button>
+        </div>
+      ), { duration: 4000 });
+      
       setShowEditModal(false);
       setEditingMessage(null);
     } catch (err) {
@@ -182,17 +243,17 @@ export default function ConfessionBoard() {
   };
 
   return (
-    <section id="board" className="w-full border-t-4 border-black graph-paper-pink relative z-10">
+    <section id="board" className="w-full border-t-4 border-[#000] graph-paper-pink relative z-10">
     <div className="p-4 sm:p-8 max-w-7xl mx-auto">
       <div className="mb-6 sm:mb-8">
-        <span className="bg-neo-green border-2 border-black px-2.5 sm:px-3 py-0.5 sm:py-1 font-bold text-[10px] sm:text-xs uppercase tracking-widest text-black shadow-[2px_2px_0_0_#000] sm:shadow-[3px_3px_0_0_#000]">CHAPTER 02</span>
+        <span className="bg-neo-green border-2 border-[#000] px-2.5 sm:px-3 py-0.5 sm:py-1 font-bold text-[10px] sm:text-xs uppercase tracking-widest text-[#000] shadow-[2px_2px_0_0_#000] sm:shadow-[3px_3px_0_0_#000]">CHAPTER 02</span>
         <h2 className="text-3xl sm:text-5xl md:text-7xl font-black uppercase mt-3 sm:mt-6 tracking-tight break-words">Confession Board</h2>
         <p className="mt-2 sm:mt-4 font-medium text-xs sm:text-base md:text-lg max-w-2xl text-gray-800 leading-relaxed">
           Bisa pakai nama asli, nama panggilan, atau anonim. Tulisanmu bisa dibaca semua orang, dan hanya bisa mengirim 5 note sehari ya.
         </p>
       </div>
 
-      <div className="bg-white border-2 border-black p-3 sm:p-6 mb-6 sm:mb-12 shadow-[4px_4px_0_0_#000] sm:shadow-[6px_6px_0_0_#000] max-w-4xl relative z-10">
+      <div className="bg-[#fff] border-2 border-[#000] p-3 sm:p-6 mb-6 sm:mb-12 shadow-[4px_4px_0_0_#000] sm:shadow-[6px_6px_0_0_#000] max-w-4xl relative z-10">
         <form onSubmit={handleAdd} className="flex flex-col gap-3 sm:gap-4">
           <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
             <input 
@@ -220,11 +281,11 @@ export default function ConfessionBoard() {
                 <Send size={14} className="sm:w-4 sm:h-4" /> Pin It
               </button>
               
-              <button type="button" onClick={() => setShowToModal(true)} className={`btn-brutal text-xs sm:text-sm py-2 px-2.5 sm:py-2.5 sm:px-5 ${selectedTo ? 'bg-neo-cyan' : 'bg-white hover:bg-gray-100'}`}>
+              <button type="button" onClick={() => setShowToModal(true)} className={`btn-brutal text-xs sm:text-sm py-2 px-2.5 sm:py-2.5 sm:px-5 ${selectedTo ? 'bg-neo-cyan' : 'bg-[#fff] hover:bg-gray-100'}`}>
                 <Users size={14} className="sm:w-4 sm:h-4" /> {selectedTo ? `To: ${selectedTo}` : 'To'}
               </button>
               
-              <button type="button" onClick={() => setShowSongModal(true)} className={`btn-brutal text-xs sm:text-sm py-2 px-2.5 sm:py-2.5 sm:px-5 ${selectedSong ? 'bg-neo-pink' : 'bg-white hover:bg-gray-100'}`}>
+              <button type="button" onClick={() => setShowSongModal(true)} className={`btn-brutal text-xs sm:text-sm py-2 px-2.5 sm:py-2.5 sm:px-5 ${selectedSong ? 'bg-neo-pink' : 'bg-[#fff] hover:bg-gray-100'}`}>
                 <Music size={14} className="sm:w-4 sm:h-4" /> {selectedSong ? 'Song Added' : 'Song'}
               </button>
             </div>
@@ -235,7 +296,7 @@ export default function ConfessionBoard() {
                   key={c}
                   type="button"
                   onClick={() => setNewMessage({...newMessage, color: c})}
-                  className={`w-5 h-5 sm:w-6 sm:h-6 border-2 border-black shrink-0 ${COLOR_CLASSES[c]} ${newMessage.color === c ? 'scale-125 shadow-[1px_1px_0_0_#000]' : 'opacity-70 hover:opacity-100'} transition-all rounded-full cursor-pointer`}
+                  className={`w-5 h-5 sm:w-6 sm:h-6 border-2 border-[#000] shrink-0 ${COLOR_CLASSES[c]} ${newMessage.color === c ? 'scale-125 shadow-[1px_1px_0_0_#000]' : 'opacity-70 hover:opacity-100'} transition-all rounded-full cursor-pointer`}
                 />
               ))}
             </div>
@@ -245,13 +306,13 @@ export default function ConfessionBoard() {
 
       {/* Modals for To and Song */}
       {showToModal && typeof document !== "undefined" && createPortal(
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white border-4 border-black p-4 sm:p-6 w-full max-w-md shadow-[6px_6px_0_0_#000] max-h-[80vh] flex flex-col">
+        <div className="fixed inset-0 bg-[#000]/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-[#fff] border-4 border-[#000] p-4 sm:p-6 w-full max-w-md shadow-[6px_6px_0_0_#000] max-h-[80vh] flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-black text-xl sm:text-2xl uppercase">Send To...</h3>
-              <button onClick={() => setShowToModal(false)} className="p-1 hover:bg-gray-200 border-2 border-black rounded-full"><X size={18} /></button>
+              <button onClick={() => setShowToModal(false)} className="p-1 hover:bg-gray-200 border-2 border-[#000] rounded-full"><X size={18} /></button>
             </div>
-            <div className="overflow-y-auto flex-1 border-2 border-black p-2 space-y-1 sm:space-y-2 text-xs sm:text-sm">
+            <div className="overflow-y-auto flex-1 border-2 border-[#000] p-2 space-y-1 sm:space-y-2 text-xs sm:text-sm">
               <button 
                 onClick={() => { setSelectedTo(null); setShowToModal(false); }}
                 className="w-full text-left p-2 hover:bg-neo-cyan font-bold uppercase border-b-2 border-dashed border-gray-300"
@@ -273,11 +334,11 @@ export default function ConfessionBoard() {
       , document.body)}
 
       {showSongModal && typeof document !== "undefined" && createPortal(
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white border-4 border-black p-4 sm:p-6 w-full max-w-md shadow-[6px_6px_0_0_#000] max-h-[80vh] flex flex-col">
+        <div className="fixed inset-0 bg-[#000]/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-[#fff] border-4 border-[#000] p-4 sm:p-6 w-full max-w-md shadow-[6px_6px_0_0_#000] max-h-[80vh] flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-black text-xl sm:text-2xl uppercase">Attach Song</h3>
-              <button onClick={() => setShowSongModal(false)} className="p-1 hover:bg-gray-200 border-2 border-black rounded-full"><X size={18} /></button>
+              <button onClick={() => setShowSongModal(false)} className="p-1 hover:bg-gray-200 border-2 border-[#000] rounded-full"><X size={18} /></button>
             </div>
             
             <form onSubmit={searchSong} className="flex gap-2 mb-4">
@@ -297,7 +358,7 @@ export default function ConfessionBoard() {
               {songResults.map(song => (
                 <div 
                   key={song.trackId}
-                  className="flex items-center gap-2 sm:gap-3 p-2 border-2 border-black hover:bg-neo-pink cursor-pointer transition-colors"
+                  className="flex items-center gap-2 sm:gap-3 p-2 border-2 border-[#000] hover:bg-neo-pink cursor-pointer transition-colors"
                   onClick={() => {
                     setSelectedSong({
                       title: song.trackName,
@@ -307,7 +368,7 @@ export default function ConfessionBoard() {
                     setShowSongModal(false);
                   }}
                 >
-                  <img src={song.artworkUrl100} alt="cover" className="w-10 h-10 border-2 border-black shrink-0" />
+                  <img src={song.artworkUrl100} alt="cover" className="w-10 h-10 border-2 border-[#000] shrink-0" />
                   <div className="overflow-hidden">
                     <p className="font-bold text-xs sm:text-sm truncate">{song.trackName}</p>
                     <p className="text-[10px] sm:text-xs truncate">{song.artistName}</p>
@@ -325,7 +386,7 @@ export default function ConfessionBoard() {
             {selectedSong && (
               <button 
                 onClick={() => { setSelectedSong(null); setShowSongModal(false); }}
-                className="mt-4 btn-brutal bg-red-400 text-white w-full text-xs"
+                className="mt-4 btn-brutal bg-red-400 text-[#fff] w-full text-xs"
               >
                 Remove Attached Song
               </button>
@@ -335,15 +396,15 @@ export default function ConfessionBoard() {
       , document.body)}
 
       {showSpamModal && typeof document !== "undefined" && createPortal(
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-neo-red border-4 border-black p-6 sm:p-8 w-full max-w-md shadow-[8px_8px_0_0_#000] text-center">
-            <h3 className="font-black text-2xl sm:text-3xl uppercase mb-3 text-white">Hold Up! 🛑</h3>
-            <p className="font-bold text-sm sm:text-lg mb-6 text-white leading-relaxed">
+        <div className="fixed inset-0 bg-[#000]/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-neo-red border-4 border-[#000] p-6 sm:p-8 w-full max-w-md shadow-[8px_8px_0_0_#000] text-center">
+            <h3 className="font-black text-2xl sm:text-3xl uppercase mb-3 text-[#fff]">Hold Up! 🛑</h3>
+            <p className="font-bold text-sm sm:text-lg mb-6 text-[#fff] leading-relaxed">
               Kamu sudah mengirim 5 note dalam 12 jam terakhir. Beri kesempatan yang lain ya!
             </p>
             <button 
               onClick={() => setShowSpamModal(false)}
-              className="btn-brutal bg-white hover:bg-gray-100 w-full text-xs sm:text-sm"
+              className="btn-brutal bg-[#fff] hover:bg-gray-100 w-full text-xs sm:text-sm"
             >
               Okay, I'll wait
             </button>
@@ -352,11 +413,11 @@ export default function ConfessionBoard() {
       , document.body)}
 
       {showEditModal && editingMessage && typeof document !== "undefined" && createPortal(
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white border-4 border-black p-4 sm:p-6 w-full max-w-md shadow-[6px_6px_0_0_#000] flex flex-col">
+        <div className="fixed inset-0 bg-[#000]/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-[#fff] border-4 border-[#000] p-4 sm:p-6 w-full max-w-md shadow-[6px_6px_0_0_#000] flex flex-col">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-black text-xl sm:text-2xl uppercase">Edit Note</h3>
-              <button onClick={() => setShowEditModal(false)} className="p-1 hover:bg-gray-200 border-2 border-black rounded-full"><X size={18} /></button>
+              <button onClick={() => setShowEditModal(false)} className="p-1 hover:bg-gray-200 border-2 border-[#000] rounded-full"><X size={18} /></button>
             </div>
             <form onSubmit={handleEditSubmit} className="flex flex-col gap-3 sm:gap-4">
               <div>
@@ -394,63 +455,165 @@ export default function ConfessionBoard() {
           const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           const dateString = date.toLocaleDateString([], { day: '2-digit', month: 'short' }).toUpperCase();
           const bgClass = COLOR_CLASSES[msg.color] || "bg-neo-yellow";
+          const isRevealed = revealedNotes.has(msg.id!);
           
           return (
             <div 
               key={msg.id} 
-              className={`p-2 sm:p-3 mb-2 sm:mb-4 relative group border sm:border-2 border-black shadow-[2px_2px_0_0_#000] flex flex-col break-inside-avoid ${bgClass}`}
+              onClick={() => handleReveal(msg)}
+              className={`p-2 sm:p-3 mb-2 sm:mb-4 relative group border sm:border-2 border-[#000] shadow-[2px_2px_0_0_#000] flex flex-col break-inside-avoid cursor-pointer hover:-translate-y-1 hover:shadow-[3px_3px_0_0_#000] transition-all ${bgClass}`}
             >
               {isAdmin && (
-                <div className="absolute top-1 right-1 sm:top-2 sm:right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                  <button onClick={() => {
+                <div className="absolute top-1 right-1 sm:top-2 sm:right-2 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10">
+                  <button onClick={(e) => {
+                    e.stopPropagation();
                     setEditingMessage({ id: msg.id!, content: msg.content, editReason: msg.editReason || "" });
                     setShowEditModal(true);
-                  }} className="text-black hover:text-blue-500 bg-white border border-black rounded-full p-0.5 sm:p-1 shadow-[1px_1px_0_0_#000]">
+                  }} className="text-[#000] hover:text-blue-500 bg-[#fff] border border-[#000] rounded-full p-0.5 sm:p-1 shadow-[1px_1px_0_0_#000]">
                     <Pencil size={11} className="sm:w-3.5 sm:h-3.5" />
                   </button>
-                  <button onClick={() => handleDelete(msg.id!)} className="text-black hover:text-red-500 bg-white border border-black rounded-full p-0.5 sm:p-1 shadow-[1px_1px_0_0_#000]">
+                  <button onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(msg.id!);
+                  }} className="text-[#000] hover:text-red-500 bg-[#fff] border border-[#000] rounded-full p-0.5 sm:p-1 shadow-[1px_1px_0_0_#000]">
                     <Trash2 size={11} className="sm:w-3.5 sm:h-3.5" />
                   </button>
                 </div>
               )}
               
-              {msg.to && (
-                <div className="font-bold text-[7px] sm:text-[10px] uppercase tracking-wide border-b border-black/20 pb-0.5 mb-1 sm:mb-2 truncate">
-                  To: {msg.to}
+              {!isRevealed ? (
+                <div className="flex-1 flex flex-col items-center justify-center py-4 sm:py-6 gap-1 sm:gap-2 opacity-80 pointer-events-none">
+                  <Eye size={16} className="sm:w-5 sm:h-5" />
+                  <span className="font-bold text-[7px] sm:text-[9px] uppercase text-center leading-tight">Secret Note<br/>Tap to open</span>
                 </div>
-              )}
-              
-              <p className="font-medium text-[9px] sm:text-xs mb-1.5 sm:mb-2 leading-tight sm:leading-relaxed whitespace-pre-wrap break-words">
-                {msg.content}
-              </p>
-              
-              {msg.isEdited && (
-                <div className="mb-1 sm:mb-2 inline-block bg-black text-white text-[6px] sm:text-[8px] font-bold uppercase px-1 py-0.2 shadow-[1px_1px_0_0_rgba(0,0,0,0.5)] self-start max-w-full truncate">
-                  EDITED: {msg.editReason}
-                </div>
-              )}
-              
-              {msg.song && (
-                <div className="flex items-center gap-1 bg-white/50 border border-black p-1 mb-1.5 sm:mb-2">
-                  <img src={msg.song.coverUrl} alt="Album Art" className="w-4 h-4 sm:w-6 sm:h-6 border border-black shrink-0" />
-                  <div className="overflow-hidden min-w-0">
-                    <p className="font-bold text-[7px] sm:text-[9px] truncate uppercase leading-none">{msg.song.title}</p>
-                    <p className="text-[6px] sm:text-[8px] truncate font-body leading-none text-gray-700">{msg.song.artist}</p>
+              ) : (
+                <>
+                  {msg.to && (
+                    <div className="font-bold text-[7px] sm:text-[10px] uppercase tracking-wide border-b border-[#000]/20 pb-0.5 mb-1 sm:mb-2 truncate">
+                      To: {msg.to}
+                    </div>
+                  )}
+                  
+                  <p className="font-medium text-[9px] sm:text-xs mb-1.5 sm:mb-2 leading-tight sm:leading-relaxed whitespace-pre-wrap break-words">
+                    {msg.content}
+                  </p>
+                  
+                  {msg.isEdited && (
+                    <div className="mb-1 sm:mb-2 inline-block bg-[#000] text-[#fff] text-[6px] sm:text-[8px] font-bold uppercase px-1 py-0.2 shadow-[1px_1px_0_0_rgba(0,0,0,0.5)] self-start max-w-full truncate">
+                      EDITED: {msg.editReason}
+                    </div>
+                  )}
+                  
+                  {msg.song && (
+                    <div className="flex items-center gap-1 bg-[#fff]/50 border border-[#000] p-1 mb-1.5 sm:mb-2">
+                      <img src={msg.song.coverUrl} alt="Album Art" className="w-4 h-4 sm:w-6 sm:h-6 border border-[#000] shrink-0" />
+                      <div className="overflow-hidden min-w-0">
+                        <p className="font-bold text-[7px] sm:text-[9px] truncate uppercase leading-none">{msg.song.title}</p>
+                        <p className="text-[6px] sm:text-[8px] truncate font-body leading-none text-gray-700">{msg.song.artist}</p>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="font-bold uppercase text-[7px] sm:text-[9px] flex justify-between items-end mt-auto pt-1 sm:pt-1.5 border-t border-[#000]/20">
+                    <span className="truncate mr-1 max-w-[55%]">— {msg.nickname}</span>
+                    <span className="text-[6px] sm:text-[8px] opacity-75 text-right font-body tracking-tight shrink-0">{timeString}<br/>{dateString}</span>
                   </div>
-                </div>
+                </>
               )}
-              
-              <div className="font-bold uppercase text-[7px] sm:text-[9px] flex justify-between items-end mt-auto pt-1 sm:pt-1.5 border-t border-black/20">
-                <span className="truncate mr-1 max-w-[55%]">— {msg.nickname}</span>
-                <span className="text-[6px] sm:text-[8px] opacity-75 text-right font-body tracking-tight shrink-0">{timeString}<br/>{dateString}</span>
-              </div>
             </div>
           );
         })}
       </div>
+
+            {/* NGL Style IG Story Modal */}
+      {selectedNglNote && typeof document !== "undefined" && createPortal(
+        <div className="fixed inset-0 bg-[#000]/80 z-[100] flex flex-col items-center justify-start sm:justify-center p-4 backdrop-blur-sm overflow-y-auto pt-16 pb-24" onClick={() => setSelectedNglNote(null)}>
+          
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedNglNote(null);
+            }}
+            className="fixed top-4 right-4 bg-[#fff] text-[#000] font-bold p-2 border-2 border-[#000] hover:bg-neo-pink hover:-translate-y-1 transition-all shadow-[2px_2px_0_0_#000] z-[110]"
+          >
+            <X size={20} />
+          </button>
+
+          <motion.div initial={{ scale: 0.8, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 300, damping: 25 }} className="w-full max-w-md relative flex flex-col gap-6 items-center my-auto">
+            
+            {/* The actual exportable sticker */}
+            <div 
+              id="ngl-sticker"
+              className="w-full shrink-0 flex items-center justify-center p-8 sm:p-12 bg-gradient-to-br from-[#ff0a54] via-[#ff477e] to-[#ff99ac] rounded-3xl overflow-hidden relative shadow-[8px_8px_0_0_#000] border-4 border-[#000]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-[rgba(255,255,255,0.2)] via-[rgba(255,255,255,0)] to-[rgba(255,255,255,0)]"></div>
+              
+              <div className="bg-[rgba(255,255,255,0.95)] backdrop-blur-md rounded-2xl w-full max-w-[340px] flex flex-col shadow-2xl border-2 border-[#000] relative z-10 transform -rotate-1 h-auto min-h-[350px]">
+                {/* Header */}
+                <div className="bg-[#EFEFEF] p-5 text-center border-b-2 border-[#000] relative rounded-t-2xl">
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#000] text-[#fff] text-[10px] font-black uppercase px-4 py-1.5 rounded-full border-2 border-[#000] whitespace-nowrap z-20 shadow-[2px_2px_0_0_#fff]">
+                    FROM: {selectedNglNote.nickname}
+                  </div>
+                  <h4 className="font-black text-base uppercase mt-2 text-[#000]">
+                    {selectedNglNote.to ? `TO: ${selectedNglNote.to}` : "SECRET CONFESSION"}
+                  </h4>
+                </div>
+                
+                {/* Content */}
+                <div className="p-6 sm:p-8 flex-1 flex flex-col items-center justify-center min-h-[200px]">
+                  <p className="text-center font-bold text-lg sm:text-xl text-[#000] leading-snug break-words whitespace-pre-wrap w-full">
+                    {selectedNglNote.content}
+                  </p>
+                </div>
+                
+                {/* Footer */}
+                <div className="p-3 bg-[#fff] border-t-2 border-[#000] flex justify-between items-center text-[10px] font-bold uppercase text-[#6b7280]">
+                  <span>Class 12-B</span>
+                  <span>{new Date(selectedNglNote.createdAt).toLocaleDateString([], {day:'numeric', month:'short'})}</span>
+                </div>
+                
+                {/* Send message fake bar */}
+                <div className="bg-[#000] text-[#fff] p-4 flex justify-between items-center cursor-default rounded-b-2xl">
+                  <span className="font-bold text-xs">Send a message...</span>
+                  <div className="bg-[#fff]/20 p-1.5 rounded-full"><Send size={12} className="text-[#fff]" /></div>
+                </div>
+              </div>
+            </div>
+
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                const node = document.getElementById('ngl-sticker');
+                if (node) {
+                  const originalTransform = node.style.transform;
+                  node.style.transform = 'none'; // reset transform for better capture if needed
+                  html2canvas(node, { scale: 3, backgroundColor: null, useCORS: true, allowTaint: true }).then(canvas => {
+                    node.style.transform = originalTransform;
+                    const link = document.createElement('a');
+                    link.download = `confession-${selectedNglNote.id}.png`;
+                    link.href = canvas.toDataURL('image/png');
+                    link.click();
+                    toast.success("Image downloaded!");
+                  }).catch(err => {
+                    node.style.transform = originalTransform;
+                    toast.error("Failed to download image");
+                    console.error(err);
+                  });
+                }
+              }}
+              className="bg-neo-cyan text-[#000] font-black text-base sm:text-lg uppercase px-8 py-4 border-4 border-[#000] flex items-center justify-center gap-3 hover:bg-neo-yellow hover:-translate-y-1 transition-all shadow-[6px_6px_0_0_#000] w-full max-w-sm"
+            >
+              <Download size={24} /> Download Story
+            </button>
+
+          </motion.div>
+        </div>
+      , document.body)}
+
       
       {messages.length === 0 && (
-        <div className="text-center p-8 sm:p-12 border-2 border-black border-dashed font-bold text-sm sm:text-xl bg-white shadow-[4px_4px_0_0_#000] mt-6">
+        <div className="text-center p-8 sm:p-12 border-2 border-[#000] border-dashed font-bold text-sm sm:text-xl bg-[#fff] shadow-[4px_4px_0_0_#000] mt-6">
           No confessions yet. Be the first!
         </div>
       )}

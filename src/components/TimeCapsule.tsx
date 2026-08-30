@@ -41,11 +41,11 @@ export default function TimeCapsule() {
         unlockDate,
         createdAt: Date.now()
       });
-      toast.success("Pesan berhasil disegel!");
+      toast.success("Pesan berhasil disegel!", { id: 'app-toast', duration: 3000 });
       setNewMsg({ nickname: "", content: "" });
     } catch (err) {
       console.error(err);
-      toast.error("Gagal menyegel pesan");
+      toast.error("Gagal menyegel pesan", { id: 'app-toast', duration: 3000 });
     }
   };
 

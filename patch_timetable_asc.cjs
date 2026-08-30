@@ -1,4 +1,6 @@
-import React, { useEffect, useState } from "react";
+const fs = require('fs');
+
+const code = `import React, { useEffect, useState } from "react";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
 import { useRole } from "@/src/hooks/useRole";
@@ -22,7 +24,7 @@ type ScheduleData = {
 const DEFAULT_SCHEDULE: ScheduleData = {
   Senin: [
     { id: 'mon-1', span: 1, subject: '', teacher: '', color: '#FFFFFF' },
-    { id: 'mon-2', span: 2, subject: 'Pend.\nPancasila', teacher: 'Annisa Nasution', color: '#FF7F7F' },
+    { id: 'mon-2', span: 2, subject: 'Pend.\\nPancasila', teacher: 'Annisa Nasution', color: '#FF7F7F' },
     { id: 'mon-3', span: 3, subject: 'B. Ing', teacher: 'Afidah Rahayu', color: '#FFB366' },
     { id: 'mon-4', span: 1, subject: 'BK', teacher: 'Rumi Murtini', color: '#33CCFF' },
     { id: 'mon-5', span: 3, subject: 'Biologi TL', teacher: 'Ely Rahmah', color: '#008080' }
@@ -35,7 +37,7 @@ const DEFAULT_SCHEDULE: ScheduleData = {
   ],
   Rabu: [
     { id: 'wed-1', span: 3, subject: 'Informatika TL', teacher: 'Ari Herdiansyah', color: '#A52A2A' },
-    { id: 'wed-2', span: 1, subject: 'Sholat\nDhuha', teacher: 'Yusral Inayah', color: '#00CC44' },
+    { id: 'wed-2', span: 1, subject: 'Sholat\\nDhuha', teacher: 'Yusral Inayah', color: '#00CC44' },
     { id: 'wed-3', span: 2, subject: 'Fisika TL', teacher: 'Harun Al Rasyid', color: '#BDB76B' },
     { id: 'wed-4', span: 2, subject: 'Seni Budaya', teacher: 'Siti Asiah', color: '#FFCC00' },
     { id: 'wed-5', span: 2, subject: 'Bhs Indonesia', teacher: 'Rr Nopi Putri Pertiwi', color: '#FFCC00' }
@@ -50,7 +52,7 @@ const DEFAULT_SCHEDULE: ScheduleData = {
   Jumat: [
     { id: 'fri-1', span: 2, subject: 'Sejarah', teacher: 'Sri Sumiyat', color: '#99FF99' },
     { id: 'fri-2', span: 2, subject: 'Matematika', teacher: 'Andrei Hidayat', color: '#3366FF' },
-    { id: 'fri-3', span: 1, subject: 'Pend.\nAl Qur\'an', teacher: 'Siti Aminah', color: '#3366FF' },
+    { id: 'fri-3', span: 1, subject: 'Pend.\\nAl Qur\\'an', teacher: 'Siti Aminah', color: '#3366FF' },
     { id: 'fri-4', span: 3, subject: 'Fisika TL', teacher: 'Harun Al Rasyid', color: '#BDB76B' },
     { id: 'fri-5', span: 2, subject: '', teacher: '', color: '#FFFFFF' }
   ]
@@ -137,7 +139,7 @@ export default function Timetable() {
 
   return (
     <section id="timetable" className="w-full bg-[#fdfbf7] py-10 px-2 sm:px-4 border-t-4 border-black border-dashed">
-      <style dangerouslySetInnerHTML={{__html: `
+      <style dangerouslySetInnerHTML={{__html: \`
         .asc-container {
           width: 100%;
           max-width: 1200px;
@@ -227,7 +229,7 @@ export default function Timetable() {
         /* Make sure white text is visible if color is dark */
         .color-dark { color: white; }
         .color-light { color: black; }
-      `}} />
+      \`}} />
 
       <div className="asc-container border-2 border-black">
         <div className="asc-header">
@@ -320,3 +322,6 @@ export default function Timetable() {
     </section>
   );
 }
+`
+
+fs.writeFileSync('src/components/Timetable.tsx', code);

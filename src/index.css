@@ -10,11 +10,13 @@
   --color-neo-blue: #2962FF;
   --color-neo-lime: #AEEA00;
   --color-neo-red: #FF1744;
+  --color-neo-mahogany: #C04000;
   --color-neo-bg: #FDFBF7;
   --font-display: 'Unbounded', sans-serif;
   --font-body: 'DM Sans', sans-serif;
-}
 
+
+}
 @layer base {
   body {
     background-color: var(--color-neo-bg);
@@ -94,3 +96,5 @@
     100% { background-position: 28px 0; }
   }
 }
+
+

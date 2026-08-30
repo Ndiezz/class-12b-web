@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import { createPortal } from "react-dom";
-import { collection, onSnapshot, addDoc, deleteDoc, doc } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, setDoc } from "firebase/firestore";
 import { useRole } from "@/src/hooks/useRole";
 import { db } from "@/src/lib/firebase";
 import { Student } from "@/src/types";
 import { NeoCard } from "./ui/NeoCard";
 import { NeoButton } from "./ui/NeoButton";
-import { Trash2, Music, X, Search, Instagram } from "lucide-react";
+import { Trash2, Music, X, Search, Instagram, Edit2 } from "lucide-react";
 
-const COLORS = ["white", "yellow", "cyan", "green", "pink", "orange", "purple", "blue", "lime", "red"] as const;
+const COLORS = ["white", "yellow", "cyan", "green", "pink", "orange", "purple", "blue", "lime", "red", "mahogany"] as const;
 const COLOR_CLASSES: Record<string, string> = {
   white: "bg-white",
   yellow: "bg-neo-cyan",
@@ -20,6 +21,7 @@ const COLOR_CLASSES: Record<string, string> = {
   blue: "bg-neo-blue",
   lime: "bg-neo-lime",
   red: "bg-neo-red",
+  mahogany: "bg-neo-mahogany",
 };
 
 const parseImageUrl = (url: string) => {
@@ -48,11 +50,14 @@ export default function Roster() {
   const [isSearching, setIsSearching] = useState(false);
   const [songResults, setSongResults] = useState<any[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "students"), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student));
       setStudents(data.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())));
+      setLoading(false);
     });
     return unsub;
   }, []);
@@ -79,17 +84,64 @@ export default function Roster() {
       const studentData: any = { ...newStudent, imageUrl: parseImageUrl(newStudent.imageUrl) };
       if (selectedSong) studentData.song = selectedSong;
       
-      await addDoc(collection(db, "students"), studentData);
+      if (editingId) {
+        await updateDoc(doc(db, "students", editingId), studentData);
+        setEditingId(null);
+      } else {
+        await addDoc(collection(db, "students"), studentData);
+      }
       setNewStudent({ name: "", initials: "", role: "", funFact: "", birthday: "", color: "white", imageUrl: "", instagram: "", tiktok: "", quote: "", favSubject: "" });
       setSelectedSong(null);
     } catch (err) {
       console.error(err);
     }
   };
+  
+  const handleEditClick = (e: React.MouseEvent, student: Student) => {
+    e.stopPropagation();
+    setNewStudent({
+      name: student.name || "",
+      initials: student.initials || "",
+      role: student.role || "",
+      funFact: student.funFact || "",
+      birthday: student.birthday || "",
+      color: student.color || "white",
+      imageUrl: student.imageUrl || "",
+      instagram: student.instagram || "",
+      tiktok: student.tiktok || "",
+      quote: student.quote || "",
+      favSubject: student.favSubject || ""
+    });
+    setSelectedSong(student.song || null);
+    setEditingId(student.id || null);
+    // scroll to form
+    const formEl = document.getElementById("admin-form");
+    if (formEl) formEl.scrollIntoView({ behavior: "smooth" });
+  };
+  
+  const cancelEdit = () => {
+    setEditingId(null);
+    setNewStudent({ name: "", initials: "", role: "", funFact: "", birthday: "", color: "white", imageUrl: "", instagram: "", tiktok: "", quote: "", favSubject: "" });
+    setSelectedSong(null);
+  };
 
   const handleDelete = async (id: string) => {
+    const studentToDel = students.find(s => s.id === id);
+    if (!studentToDel) return;
     try {
       await deleteDoc(doc(db, "students", id));
+      toast((t) => (
+        <div className="flex items-center gap-3">
+          <span className="font-bold text-sm">Polaroid deleted</span>
+          <button onClick={() => {
+            toast.dismiss(t.id);
+            setDoc(doc(db, "students", id), studentToDel);
+            toast.success("Polaroid restored!");
+          }} className="bg-neo-cyan px-2 py-1 font-bold border-2 border-black shadow-[2px_2px_0_0_#000] text-xs">
+            UNDO
+          </button>
+        </div>
+      ), { duration: 4000 });
     } catch (err) {
       console.error(err);
     }
@@ -133,7 +185,7 @@ export default function Roster() {
 
       {isAdmin && (
         <NeoCard color="white" className="p-4 sm:p-6 mb-8 sm:mb-12">
-          <h3 className="font-bold text-lg sm:text-xl mb-4 uppercase">Admin: Add Student</h3>
+          <h3 id="admin-form" className="font-bold text-lg sm:text-xl mb-4 uppercase">{editingId ? "Admin: Edit Student" : "Admin: Add Student"}</h3>
           <form onSubmit={handleAdd} className="flex flex-wrap gap-3 sm:gap-4 items-end">
             <div className="flex flex-col">
               <label className="font-bold text-xs sm:text-sm">Initials</label>
@@ -152,12 +204,12 @@ export default function Roster() {
               <input type="url" className="input-brutal w-full" placeholder="https://..." value={newStudent.imageUrl} onChange={e => setNewStudent({...newStudent, imageUrl: e.target.value})} />
             </div>
             <div className="flex flex-col flex-1 min-w-[120px]">
-              <label className="font-bold text-xs sm:text-sm">Instagram Handle/Link</label>
-              <input type="text" className="input-brutal w-full" placeholder="@username" value={newStudent.instagram} onChange={e => setNewStudent({...newStudent, instagram: e.target.value})} />
+              <label className="font-bold text-xs sm:text-sm">Instagram Link</label>
+              <input type="text" className="input-brutal w-full" placeholder="https://instagram.com/..." value={newStudent.instagram} onChange={e => setNewStudent({...newStudent, instagram: e.target.value})} />
             </div>
             <div className="flex flex-col flex-1 min-w-[120px]">
-              <label className="font-bold text-xs sm:text-sm">TikTok Handle</label>
-              <input type="text" className="input-brutal w-full" placeholder="@username" value={newStudent.tiktok} onChange={e => setNewStudent({...newStudent, tiktok: e.target.value})} />
+              <label className="font-bold text-xs sm:text-sm">TikTok Link</label>
+              <input type="text" className="input-brutal w-full" placeholder="https://tiktok.com/..." value={newStudent.tiktok} onChange={e => setNewStudent({...newStudent, tiktok: e.target.value})} />
             </div>
             <div className="flex flex-col flex-1 min-w-[120px]">
               <label className="font-bold text-xs sm:text-sm">Quote / Motto</label>
@@ -256,7 +308,23 @@ export default function Roster() {
 
       {/* Grid: 2 per row on mobile, up to 4 on desktop for larger polaroid cards */}
       <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
-        {filteredStudents.map((student) => {
+        
+      {loading && (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6">
+          {[...Array(8)].map((_, i) => (
+            <div key={i} className="bg-white texture-polkadot border-2 sm:border-4 border-black p-2 sm:p-3 pb-3 sm:pb-4 flex flex-col shadow-[4px_4px_0_0_#000] sm:shadow-[6px_6px_0_0_#000]">
+              <div className="border-2 sm:border-4 border-black aspect-[4/5] bg-gray-200 animate-pulse mb-2 sm:mb-3"></div>
+              <div className="flex flex-col flex-1 bg-white p-1">
+                <div className="h-4 bg-gray-200 animate-pulse w-3/4 mb-2"></div>
+                <div className="h-3 bg-gray-200 animate-pulse w-1/2 mb-1"></div>
+                <div className="h-3 bg-gray-200 animate-pulse w-full mt-auto"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+        {!loading && filteredStudents.map((student) => {
           const bgClass = COLOR_CLASSES[student.color] || "bg-white";
           
           return (
@@ -266,9 +334,14 @@ export default function Roster() {
               className={`bg-white texture-polkadot border-2 sm:border-4 border-black p-2 sm:p-3 pb-3 sm:pb-4 relative group flex flex-col shadow-[4px_4px_0_0_#000] sm:shadow-[6px_6px_0_0_#000] transform transition-transform hover:-translate-y-1 hover:rotate-1 cursor-pointer`}
             >
               {isAdmin && (
-                <button onClick={(e) => { e.stopPropagation(); handleDelete(student.id!); }} className="absolute top-1 right-1 sm:top-2 sm:right-2 text-black hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity z-50 bg-white border border-black rounded-full p-0.5 sm:p-1 shadow-[1px_1px_0_0_#000]">
-                  <Trash2 size={12} className="sm:w-3.5 sm:h-3.5" />
-                </button>
+                <div className="absolute top-1 right-1 sm:top-2 sm:right-2 flex flex-col gap-1 z-50 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                  <button onClick={(e) => handleEditClick(e, student)} className="text-black hover:text-neo-blue bg-white border border-black rounded-full p-0.5 sm:p-1 shadow-[1px_1px_0_0_#000]" title="Edit Student">
+                    <Edit2 size={12} className="sm:w-3.5 sm:h-3.5" />
+                  </button>
+                  <button onClick={(e) => { e.stopPropagation(); handleDelete(student.id!); }} className="text-black hover:text-red-500 bg-white border border-black rounded-full p-0.5 sm:p-1 shadow-[1px_1px_0_0_#000]" title="Delete Student">
+                    <Trash2 size={12} className="sm:w-3.5 sm:h-3.5" />
+                  </button>
+                </div>
               )}
               
               {/* Image Area (Polaroid style) */}
@@ -305,7 +378,7 @@ export default function Roster() {
                     </span>
                   )}
                   {student.instagram && (
-                    <a href={student.instagram.startsWith('http') ? student.instagram : `https://instagram.com/${student.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="ml-auto bg-white border-2 border-black p-1 shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] transition-all">
+                    <a href={student.instagram.startsWith("http") ? student.instagram : `https://${student.instagram}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="ml-auto bg-white border-2 border-black p-1 shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] transition-all">
                       <Instagram size={12} className="sm:w-3.5 sm:h-3.5" />
                     </a>
                   )}
@@ -332,7 +405,7 @@ export default function Roster() {
             </div>
           );
         })}
-        {filteredStudents.length === 0 && (
+        {!loading && !loading && filteredStudents.length === 0 && (
           <div className="col-span-full text-center p-6 sm:p-8 border-2 sm:border-4 border-black border-dashed font-bold text-xs sm:text-sm bg-white">
             {students.length === 0 ? "No students added yet. Admin needs to add them!" : "No students found matching your search."}
           </div>
@@ -351,7 +424,7 @@ export default function Roster() {
                     {selectedStudent.initials}
                   </span>
                   {selectedStudent.role && (
-                    <span className="px-2 py-1 border-2 border-black font-bold uppercase text-xs shadow-[2px_2px_0_0_#000] bg-neo-cyan">
+                    <span className={`px-2 py-1 border-2 border-black font-bold uppercase text-xs shadow-[2px_2px_0_0_#000] ${COLOR_CLASSES[selectedStudent.color] || "bg-white"}`}>
                       {selectedStudent.role}
                     </span>
                   )}
@@ -409,12 +482,12 @@ export default function Roster() {
                   {(selectedStudent.instagram || selectedStudent.tiktok) && (
                     <div className="flex gap-2">
                       {selectedStudent.instagram && (
-                        <a href={selectedStudent.instagram.startsWith('http') ? selectedStudent.instagram : `https://instagram.com/${selectedStudent.instagram.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="flex-1 bg-white border-2 border-black p-2 flex items-center justify-center gap-2 font-bold text-xs sm:text-sm hover:-translate-y-1 hover:shadow-[4px_4px_0_0_#000] transition-all">
+                        <a href={selectedStudent.instagram.startsWith("http") ? selectedStudent.instagram : `https://${selectedStudent.instagram}`} target="_blank" rel="noopener noreferrer" className="flex-1 bg-white border-2 border-black p-2 flex items-center justify-center gap-2 font-bold text-xs sm:text-sm hover:-translate-y-1 hover:shadow-[4px_4px_0_0_#000] transition-all">
                           <Instagram size={16} /> Instagram
                         </a>
                       )}
                       {selectedStudent.tiktok && (
-                        <a href={selectedStudent.tiktok.startsWith('http') ? selectedStudent.tiktok : `https://tiktok.com/${selectedStudent.tiktok.startsWith('@') ? '' : '@'}${selectedStudent.tiktok.replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="flex-1 bg-black text-white border-2 border-black p-2 flex items-center justify-center gap-2 font-bold text-xs sm:text-sm hover:-translate-y-1 hover:shadow-[4px_4px_0_0_#000] transition-all">
+                        <a href={selectedStudent.tiktok.startsWith("http") ? selectedStudent.tiktok : `https://${selectedStudent.tiktok}`} target="_blank" rel="noopener noreferrer" className="flex-1 bg-black text-white border-2 border-black p-2 flex items-center justify-center gap-2 font-bold text-xs sm:text-sm hover:-translate-y-1 hover:shadow-[4px_4px_0_0_#000] transition-all">
                           TikTok
                         </a>
                       )}
