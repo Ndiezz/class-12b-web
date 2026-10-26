@@ -1,0 +1,6 @@
+{
+  "summary":  "Rencana implementasi untuk menghapus penutup Secret Note dan mengganti popup Story menjadi tampilan Note biasa tanpa tombol unduh di Confession Board, serta menerjemahkan dan mengaktifkan fitur Hubungi Ketua Kelas dengan penyimpanan database Firestore dan Kotak Masuk Admin.",
+  "updatedAt":  "2026-10-23T15:57:39.347875717Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

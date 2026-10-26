@@ -79,6 +79,18 @@
       "properties": {
         "className": { "type": "string", "maxLength": 50 }
       }
+    },
+    "ContactMessage": {
+      "title": "Contact Message",
+      "description": "A message sent to the admin via the footer contact form",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 100 },
+        "message": { "type": "string", "maxLength": 1000 },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["name", "email", "message", "createdAt"]
     }
   },
   "firestore": {
@@ -105,6 +117,10 @@
     "config/{configId}": {
       "schema": { "$ref": "#/entities/Config" },
       "description": "Global configuration"
+    },
+    "contact_messages/{contactId}": {
+      "schema": { "$ref": "#/entities/ContactMessage" },
+      "description": "Messages sent to the admin"
     }
   }
 }

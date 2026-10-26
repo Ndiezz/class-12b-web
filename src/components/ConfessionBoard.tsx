@@ -6,9 +6,8 @@ import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, setDoc } fro
 import { db } from "@/src/lib/firebase";
 import { useRole } from "@/src/hooks/useRole";
 import { Message, Student } from "@/src/types";
-import { Trash2, Send, Users, Music, X, Search, Pencil, Download, Eye } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
-import html2canvas from "html2canvas";
+import { Trash2, Send, Users, Music, X, Search, Pencil } from "lucide-react";
+import { motion } from "motion/react";
 
 const COLORS: string[] = ["yellow", "cyan", "green", "pink", "orange", "purple", "blue", "lime", "red", "mahogany"];
 const COLOR_CLASSES: Record<string, string> = {
@@ -28,27 +27,7 @@ export default function ConfessionBoard() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const { isAdmin } = useRole();
-  const [revealedNotes, setRevealedNotes] = useState<Set<string>>(new Set());
-  const [selectedNglNote, setSelectedNglNote] = useState<Message | null>(null);
-
-  useEffect(() => {
-    const saved = localStorage.getItem('revealed_notes');
-    if (saved) {
-      try {
-        setRevealedNotes(new Set(JSON.parse(saved)));
-      } catch(e){}
-    }
-  }, []);
-
-  const handleReveal = (msg: Message) => {
-    if (!revealedNotes.has(msg.id!)) {
-      const newSet = new Set(revealedNotes);
-      newSet.add(msg.id!);
-      setRevealedNotes(newSet);
-      localStorage.setItem('revealed_notes', JSON.stringify(Array.from(newSet)));
-    }
-    setSelectedNglNote(msg);
-  };
+  const [selectedNote, setSelectedNote] = useState<Message | null>(null);
 
   
   // Rate Limiting Logic
@@ -99,13 +78,13 @@ export default function ConfessionBoard() {
   const [selectedSong, setSelectedSong] = useState<{title: string, artist: string, coverUrl: string} | null>(null);
 
   useEffect(() => {
-    if (showToModal || showSongModal || showSpamModal || showEditModal) {
+    if (showToModal || showSongModal || showSpamModal || showEditModal || selectedNote) {
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
     }
     return () => { document.body.style.overflow = ""; };
-  }, [showToModal, showSongModal, showSpamModal, showEditModal]);
+  }, [showToModal, showSongModal, showSpamModal, showEditModal, selectedNote]);
   
   const [songSearch, setSongSearch] = useState("");
   const [isSearching, setIsSearching] = useState(false);
@@ -455,12 +434,11 @@ export default function ConfessionBoard() {
           const timeString = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           const dateString = date.toLocaleDateString([], { day: '2-digit', month: 'short' }).toUpperCase();
           const bgClass = COLOR_CLASSES[msg.color] || "bg-neo-yellow";
-          const isRevealed = revealedNotes.has(msg.id!);
           
           return (
             <div 
               key={msg.id} 
-              onClick={() => handleReveal(msg)}
+              onClick={() => setSelectedNote(msg)}
               className={`p-2 sm:p-3 mb-2 sm:mb-4 relative group border sm:border-2 border-[#000] shadow-[2px_2px_0_0_#000] flex flex-col break-inside-avoid cursor-pointer hover:-translate-y-1 hover:shadow-[3px_3px_0_0_#000] transition-all ${bgClass}`}
             >
               {isAdmin && (
@@ -481,132 +459,94 @@ export default function ConfessionBoard() {
                 </div>
               )}
               
-              {!isRevealed ? (
-                <div className="flex-1 flex flex-col items-center justify-center py-4 sm:py-6 gap-1 sm:gap-2 opacity-80 pointer-events-none">
-                  <Eye size={16} className="sm:w-5 sm:h-5" />
-                  <span className="font-bold text-[7px] sm:text-[9px] uppercase text-center leading-tight">Secret Note<br/>Tap to open</span>
+              {msg.to && (
+                <div className="font-bold text-[7px] sm:text-[10px] uppercase tracking-wide border-b border-[#000]/20 pb-0.5 mb-1 sm:mb-2 truncate">
+                  To: {msg.to}
                 </div>
-              ) : (
-                <>
-                  {msg.to && (
-                    <div className="font-bold text-[7px] sm:text-[10px] uppercase tracking-wide border-b border-[#000]/20 pb-0.5 mb-1 sm:mb-2 truncate">
-                      To: {msg.to}
-                    </div>
-                  )}
-                  
-                  <p className="font-medium text-[9px] sm:text-xs mb-1.5 sm:mb-2 leading-tight sm:leading-relaxed whitespace-pre-wrap break-words">
-                    {msg.content}
-                  </p>
-                  
-                  {msg.isEdited && (
-                    <div className="mb-1 sm:mb-2 inline-block bg-[#000] text-[#fff] text-[6px] sm:text-[8px] font-bold uppercase px-1 py-0.2 shadow-[1px_1px_0_0_rgba(0,0,0,0.5)] self-start max-w-full truncate">
-                      EDITED: {msg.editReason}
-                    </div>
-                  )}
-                  
-                  {msg.song && (
-                    <div className="flex items-center gap-1 bg-[#fff]/50 border border-[#000] p-1 mb-1.5 sm:mb-2">
-                      <img src={msg.song.coverUrl} alt="Album Art" className="w-4 h-4 sm:w-6 sm:h-6 border border-[#000] shrink-0" />
-                      <div className="overflow-hidden min-w-0">
-                        <p className="font-bold text-[7px] sm:text-[9px] truncate uppercase leading-none">{msg.song.title}</p>
-                        <p className="text-[6px] sm:text-[8px] truncate font-body leading-none text-gray-700">{msg.song.artist}</p>
-                      </div>
-                    </div>
-                  )}
-                  
-                  <div className="font-bold uppercase text-[7px] sm:text-[9px] flex justify-between items-end mt-auto pt-1 sm:pt-1.5 border-t border-[#000]/20">
-                    <span className="truncate mr-1 max-w-[55%]">— {msg.nickname}</span>
-                    <span className="text-[6px] sm:text-[8px] opacity-75 text-right font-body tracking-tight shrink-0">{timeString}<br/>{dateString}</span>
-                  </div>
-                </>
               )}
+              
+              <p className="font-medium text-[9px] sm:text-xs mb-1.5 sm:mb-2 leading-tight sm:leading-relaxed whitespace-pre-wrap break-words">
+                {msg.content}
+              </p>
+              
+              {msg.isEdited && (
+                <div className="mb-1 sm:mb-2 inline-block bg-[#000] text-[#fff] text-[6px] sm:text-[8px] font-bold uppercase px-1 py-0.2 shadow-[1px_1px_0_0_rgba(0,0,0,0.5)] self-start max-w-full truncate">
+                  EDITED: {msg.editReason}
+                </div>
+              )}
+              
+              {msg.song && (
+                <div className="flex items-center gap-1 bg-[#fff]/50 border border-[#000] p-1 mb-1.5 sm:mb-2">
+                  <img src={msg.song.coverUrl} alt="Album Art" className="w-4 h-4 sm:w-6 sm:h-6 border border-[#000] shrink-0" />
+                  <div className="overflow-hidden min-w-0">
+                    <p className="font-bold text-[7px] sm:text-[9px] truncate uppercase leading-none">{msg.song.title}</p>
+                    <p className="text-[6px] sm:text-[8px] truncate font-body leading-none text-gray-700">{msg.song.artist}</p>
+                  </div>
+                </div>
+              )}
+              
+              <div className="font-bold uppercase text-[7px] sm:text-[9px] flex justify-between items-end mt-auto pt-1 sm:pt-1.5 border-t border-[#000]/20">
+                <span className="truncate mr-1 max-w-[55%]">— {msg.nickname}</span>
+                <span className="text-[6px] sm:text-[8px] opacity-75 text-right font-body tracking-tight shrink-0">{timeString}<br/>{dateString}</span>
+              </div>
             </div>
           );
         })}
       </div>
 
-            {/* NGL Style IG Story Modal */}
-      {selectedNglNote && typeof document !== "undefined" && createPortal(
-        <div className="fixed inset-0 bg-[#000]/80 z-[100] flex flex-col items-center justify-start sm:justify-center p-4 backdrop-blur-sm overflow-y-auto pt-16 pb-24" onClick={() => setSelectedNglNote(null)}>
-          
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedNglNote(null);
-            }}
-            className="fixed top-4 right-4 bg-[#fff] text-[#000] font-bold p-2 border-2 border-[#000] hover:bg-neo-pink hover:-translate-y-1 transition-all shadow-[2px_2px_0_0_#000] z-[110]"
+      {/* Regular Note Detail Modal */}
+      {selectedNote && typeof document !== "undefined" && createPortal(
+        <div
+          className="fixed inset-0 bg-[#000]/75 z-[100] flex items-center justify-center p-4 backdrop-blur-sm"
+          onClick={() => setSelectedNote(null)}
+        >
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0, y: 12 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            transition={{ type: "spring", stiffness: 320, damping: 26 }}
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-md p-6 sm:p-8 border-4 border-[#000] shadow-[8px_8px_0_0_#000] relative flex flex-col ${COLOR_CLASSES[selectedNote.color] || "bg-neo-yellow"}`}
           >
-            <X size={20} />
-          </button>
-
-          <motion.div initial={{ scale: 0.8, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 300, damping: 25 }} className="w-full max-w-md relative flex flex-col gap-6 items-center my-auto">
-            
-            {/* The actual exportable sticker */}
-            <div 
-              id="ngl-sticker"
-              className="w-full shrink-0 flex items-center justify-center p-8 sm:p-12 bg-gradient-to-br from-[#ff0a54] via-[#ff477e] to-[#ff99ac] rounded-3xl overflow-hidden relative shadow-[8px_8px_0_0_#000] border-4 border-[#000]"
-              onClick={(e) => e.stopPropagation()}
+            <button
+              onClick={() => setSelectedNote(null)}
+              className="absolute top-3 right-3 bg-[#fff] text-[#000] font-bold p-1.5 border-2 border-[#000] hover:bg-neo-pink transition-colors shadow-[2px_2px_0_0_#000]"
+              aria-label="Close note"
             >
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-[rgba(255,255,255,0.2)] via-[rgba(255,255,255,0)] to-[rgba(255,255,255,0)]"></div>
-              
-              <div className="bg-[rgba(255,255,255,0.95)] backdrop-blur-md rounded-2xl w-full max-w-[340px] flex flex-col shadow-2xl border-2 border-[#000] relative z-10 transform -rotate-1 h-auto min-h-[350px]">
-                {/* Header */}
-                <div className="bg-[#EFEFEF] p-5 text-center border-b-2 border-[#000] relative rounded-t-2xl">
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#000] text-[#fff] text-[10px] font-black uppercase px-4 py-1.5 rounded-full border-2 border-[#000] whitespace-nowrap z-20 shadow-[2px_2px_0_0_#fff]">
-                    FROM: {selectedNglNote.nickname}
-                  </div>
-                  <h4 className="font-black text-base uppercase mt-2 text-[#000]">
-                    {selectedNglNote.to ? `TO: ${selectedNglNote.to}` : "SECRET CONFESSION"}
-                  </h4>
-                </div>
-                
-                {/* Content */}
-                <div className="p-6 sm:p-8 flex-1 flex flex-col items-center justify-center min-h-[200px]">
-                  <p className="text-center font-bold text-lg sm:text-xl text-[#000] leading-snug break-words whitespace-pre-wrap w-full">
-                    {selectedNglNote.content}
-                  </p>
-                </div>
-                
-                {/* Footer */}
-                <div className="p-3 bg-[#fff] border-t-2 border-[#000] flex justify-between items-center text-[10px] font-bold uppercase text-[#6b7280]">
-                  <span>Class 12-B</span>
-                  <span>{new Date(selectedNglNote.createdAt).toLocaleDateString([], {day:'numeric', month:'short'})}</span>
-                </div>
-                
-                {/* Send message fake bar */}
-                <div className="bg-[#000] text-[#fff] p-4 flex justify-between items-center cursor-default rounded-b-2xl">
-                  <span className="font-bold text-xs">Send a message...</span>
-                  <div className="bg-[#fff]/20 p-1.5 rounded-full"><Send size={12} className="text-[#fff]" /></div>
-                </div>
-              </div>
-            </div>
-
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                const node = document.getElementById('ngl-sticker');
-                if (node) {
-                  const originalTransform = node.style.transform;
-                  node.style.transform = 'none'; // reset transform for better capture if needed
-                  html2canvas(node, { scale: 3, backgroundColor: null, useCORS: true, allowTaint: true }).then(canvas => {
-                    node.style.transform = originalTransform;
-                    const link = document.createElement('a');
-                    link.download = `confession-${selectedNglNote.id}.png`;
-                    link.href = canvas.toDataURL('image/png');
-                    link.click();
-                    toast.success("Image downloaded!");
-                  }).catch(err => {
-                    node.style.transform = originalTransform;
-                    toast.error("Failed to download image");
-                    console.error(err);
-                  });
-                }
-              }}
-              className="bg-neo-cyan text-[#000] font-black text-base sm:text-lg uppercase px-8 py-4 border-4 border-[#000] flex items-center justify-center gap-3 hover:bg-neo-yellow hover:-translate-y-1 transition-all shadow-[6px_6px_0_0_#000] w-full max-w-sm"
-            >
-              <Download size={24} /> Download Story
+              <X size={18} />
             </button>
 
+            {selectedNote.to && (
+              <div className="font-black text-xs sm:text-sm uppercase tracking-wide border-b-2 border-[#000]/30 pb-2 mb-4 pr-10 break-words">
+                To: {selectedNote.to}
+              </div>
+            )}
+
+            <p className={`font-bold text-base sm:text-lg text-[#000] leading-relaxed whitespace-pre-wrap break-words mb-6 ${!selectedNote.to ? 'pr-8' : ''}`}>
+              {selectedNote.content}
+            </p>
+
+            {selectedNote.isEdited && (
+              <div className="mb-4 inline-block bg-[#000] text-[#fff] text-[10px] sm:text-xs font-bold uppercase px-2 py-1 shadow-[2px_2px_0_0_rgba(0,0,0,0.4)] self-start">
+                EDITED: {selectedNote.editReason}
+              </div>
+            )}
+
+            {selectedNote.song && (
+              <div className="flex items-center gap-3 bg-[#fff]/70 border-2 border-[#000] p-2.5 mb-5 shadow-[3px_3px_0_0_#000]">
+                <img src={selectedNote.song.coverUrl} alt="Album Art" className="w-10 h-10 sm:w-12 sm:h-12 border-2 border-[#000] shrink-0" />
+                <div className="overflow-hidden min-w-0">
+                  <p className="font-black text-xs sm:text-sm truncate uppercase">{selectedNote.song.title}</p>
+                  <p className="text-xs truncate font-body text-gray-800">{selectedNote.song.artist}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="font-bold uppercase text-xs sm:text-sm flex justify-between items-end mt-auto pt-3 border-t-2 border-[#000]/30">
+              <span className="truncate mr-2 max-w-[60%] font-black">— {selectedNote.nickname}</span>
+              <span className="text-[10px] sm:text-xs opacity-80 text-right font-body shrink-0">
+                {new Date(selectedNote.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · {new Date(selectedNote.createdAt).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase()}
+              </span>
+            </div>
           </motion.div>
         </div>
       , document.body)}
