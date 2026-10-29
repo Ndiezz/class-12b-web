@@ -1,100 +1,98 @@
-# Pembaruan Confession Board & Fitur Hubungi Ketua Kelas
+# Sistem Lagu Gaya Instagram Note pada Anggota (Roster)
 
-Perubahan ini menyederhanakan tampilan catatan pada Confession Board agar langsung terbaca dan tampil sebagai catatan biasa saat dibuka, serta mengaktifkan formulir "Hubungi Ketua Kelas" dalam Bahasa Indonesia yang terhubung langsung ke database lengkap dengan Kotak Masuk untuk Admin.
+Menerapkan konsep pemilih bagian lagu berdurasi penuh dan pemutar otomatis potongan 30 detik (seperti pada Confession Board Note) ke seluruh profil **Anggota (Roster)**, lengkap dengan animasi sampul album berkedip (`animate-pulse`) dan bar progres yang bergerak mulus (*smooth sliding*).
 
 ## User Review & Critical Decisions
 
 > [!IMPORTANT]
-> Keputusan berikut telah disesuaikan berdasarkan konfirmasi Anda:
-
-- **Tampilan Catatan Confession Board**: Penutup *"Secret Note / Tap to open"* dihapus sepenuhnya sehingga seluruh isi catatan langsung terlihat di papan utama.
-- **Popup Catatan Biasa (Tanpa Unduh Story)**: Saat catatan diklik, popup tidak lagi menggunakan bingkai ala Instagram Story dan tombol *"Download Story"* dihapus. Sebagai gantinya, popup menampilkan kartu catatan Neo-Brutalist berukuran besar yang nyaman dibaca.
-- **Penyimpanan & Kotak Masuk Ketua Kelas**: Formulir *"Contact the Class Rep"* diterjemahkan ke Bahasa Indonesia (*"Hubungi Ketua Kelas"*), menyimpan pesan secara nyata ke database Cloud Firestore, dan menyediakan panel **Kotak Masuk Ketua Kelas** khusus bagi Admin untuk membaca serta menghapus pesan yang masuk.
+> Seluruh preferensi yang telah dikonfirmasi sebelumnya untuk Note diterapkan secara identik pada bagian Anggota:
+> - **Sumber Lagu Penuh**: Menggunakan audio utuh dari YouTube (via YouTube IFrame Player API + pencarian otomatis `videoId`) sehingga *range slider* mencakup durasi penuh lagu dari awal sampai akhir.
+> - **Durasi & Siklus Putar Saat Profil Anggota Dibuka**: Memutar potongan **30 detik secara berulang (looping)** mulai dari detik yang dipilih, serta menjeda musik latar web secara otomatis saat modal profil anggota dibuka dan melanjutkannya saat ditutup.
+> - **Kompatibilitas Anggota Lama**: Untuk seluruh anggota yang sudah memiliki lagu tersimpan sebelumnya tanpa data detik mulai (`startTime`), lagu akan tetap otomatis diputar dari `0:00` (atau bagian yang diatur ulang oleh Admin melalui menu Edit Student).
 
 ---
 
 ## 1. Overview & Core Concept
 
 - **What It Does**:
-  1. Memperbarui **Confession Board** agar setiap catatan tampil terbuka secara langsung dan ketika diklik menampilkan popup catatan reguler tanpa fitur unduh gambar.
-  2. Mengubah bagian **Footer (Hubungi Ketua Kelas)** menjadi sistem pengiriman pesan fungsional berbahasa Indonesia yang tersimpan di database dan dapat dipantau oleh Admin secara *real-time*.
-- **Target Audience / Persona**: Siswa kelas 12-B yang ingin membaca atau mengirim catatan di Confession Board, anggota kelas yang ingin menyampaikan pertanyaan/masukan ke Ketua Kelas, serta Admin/Ketua Kelas yang mengelola pesan masuk.
-- **Key Value**: Pengalaman membaca catatan yang lebih cepat tanpa harus membuka satu per satu, serta saluran komunikasi langsung yang benar-benar berfungsi antara siswa dan pengurus kelas.
+  1. **Modal Profil Anggota (`selectedStudent`)**:
+     - Saat pengunjung mengklik kartu Polaroid anggota yang memiliki *Theme Song*, lagu anggota tersebut langsung diputar otomatis pada bagian detik yang dipilih selama 30 detik berulang.
+     - Musik latar utama web dijeda otomatis (`note-audio-start`) ketika profil dibuka dan dilanjutkan kembali (`note-audio-stop`) ketika modal profil ditutup.
+     - Menampilkan kartu pemutar lagu bergaya Neo-Brutalist dengan:
+       - Foto sampul album yang berkedip lembut (`animate-pulse`) saat lagu berputar.
+       - Tanpa badge `"Mulai 0:00"` agar tampilan bersih seperti pada Note.
+       - Tombol **Ulangi Bagian Lagu** (`RotateCcw`) dan **Putar/Jeda** (`Play`/`Pause`).
+       - Bar progres interaktif yang bergerak mulus (*smooth sliding* dengan interpolasi 50ms & `transition-[width] duration-75 ease-linear`) sekaligus memiliki efek `animate-pulse` saat lagu aktif.
+  2. **Modal Pilih & Atur Lagu Anggota (Admin Add/Edit Student)**:
+     - Saat Admin menambahkan atau mengedit lagu anggota di bagian **Anggota**, modal lampiran lagu menampilkan *configurator* yang sama persis dengan Confession Board:
+       - Label **`MULAI BAGIAN LAGU`** dengan indikator rentang klip 30 detik (`0:00 - 0:30`).
+       - *Range slider* yang mencakup **durasi lagu penuh** (dari `0:00` hingga akhir lagu).
+       - Tombol tes putar untuk mendengarkan bagian lagu secara langsung dan tombol konfirmasi **`SIMPAN LAGU`**.
+- **Target Audience / Persona**: Pengunjung web dan siswa Kelas 12B yang melihat profil teman sekelas mereka, serta Admin yang mengelola data anggota.
+- **Key Value**: Pengalaman musik yang konsisten, ekspresif, dan mulus di seluruh halaman web—baik saat membuka Note maupun saat melihat kartu profil setiap anggota kelas.
 
 ---
 
 ## 2. User Experience & Visual Design
 
 - **Key User Flows**:
-  1. **Membaca & Membuka Catatan Confession Board**:
-     - Pengguna menggulir ke bagian Confession Board dan langsung melihat isi pesan, pengirim, penerima (*To*), dan lagu yang disematkan pada setiap kartu warna-warni.
-     - Ketika pengguna mengklik salah satu catatan, sebuah modal catatan Neo-Brutalist terbuka dengan warna latar yang sesuai dengan catatan tersebut, menampilkan isi pesan secara jelas beserta detail waktu, lagu, dan pengirim, dilengkapi tombol tutup (`X`) di pojok kanan atas.
-  2. **Mengirim Pesan ke Ketua Kelas**:
-     - Pengguna menggulir ke bagian paling bawah halaman (*Hubungi Ketua Kelas*).
-     - Pengguna mengisi **Nama Kamu**, **Email / Kontak**, dan **Tulis Pesanmu...**, lalu menekan tombol **Kirim Pesan**.
-     - Pesan disimpan ke database, formulir dikosongkan, dan muncul notifikasi bahwa pesan berhasil dikirim ke Ketua Kelas.
-  3. **Mengelola Kotak Masuk (Khusus Admin)**:
-     - Saat Admin masuk (*login*), panel **Kotak Masuk Ketua Kelas** otomatis tampil di area Footer menampilkan daftar pesan yang masuk secara *real-time* (nama pengirim, kontak, waktu, dan isi pesan) beserta tombol hapus untuk membersihkan pesan yang sudah ditindaklanjuti.
+  1. **Membuka Kartu Profil Anggota**:
+     - Pengunjung mengklik salah satu kartu Polaroid di bagian **CHAPTER 01 — ANGGOTA**.
+     - Modal profil terbuka dan langsung memutar potongan 30 detik lagu tema anggota tersebut dari detik yang telah disimpan.
+     - Sampul album dan bar progres berkedip halus (`animate-pulse`), sementara isi bar progres bergeser mulus dari 0% ke 100% sepanjang potongan 30 detik.
+  2. **Mengatur Bagian Lagu Anggota (Admin)**:
+     - Admin mengklik tombol **Edit** pada kartu anggota (atau menambah anggota baru), lalu menekan tombol **Song** / **Atur Bagian**.
+     - Admin mencari lagu, memilih lagu dari hasil pencarian, lalu menggeser slider **`MULAI BAGIAN LAGU`** di sepanjang durasi penuh lagu dan menekan **`SIMPAN LAGU`**.
 - **Visual Identity & Theme**:
-  - *Aesthetic Direction*: Neo-Brutalist khas halaman kelas dengan garis tepi hitam tegas (`border-black`), bayangan tajam (`shadow-[4px_4px_0_0_#000]`), dan warna aksen cerah.
-  - *Color Palette & Mood*: Mempertahankan palet warna catatan (`neo-yellow`, `neo-cyan`, `neo-green`, `neo-pink`, `neo-orange`, `neo-purple`, `neo-blue`, `neo-lime`, `neo-red`, `neo-mahogany`) di atas kanvas terang.
-  - *Typography & Hierarchy*: Judul bagian menggunakan huruf tebal `Unbounded` (`font-black uppercase`) dan teks isi menggunakan `DM Sans` yang mudah dibaca.
-- **Interactive Feedback & Motion**:
-  - Animasi transisi halus saat membuka popup catatan, status tombol saat mengirim pesan (*"Mengirim..."*), serta pesan konfirmasi *toast* ketika pesan berhasil dikirim atau dihapus.
+  - Mempertahankan estetika **Neo-Brutalist** (`border-2 border-black`, bayangan tegas `shadow-[4px_4px_0_0_#000]`, aksen `bg-neo-pink`, `bg-neo-cyan`, `bg-neo-green`, dan `bg-neo-yellow`).
 
 ---
 
 ## 3. Key Product Decisions & Trade-Offs
 
-- **Decision 1: Menghapus Status "Revealed" Lokal & Mengganti Modal NGL Menjadi Modal Note Biasa**
-  - *Chosen Approach*: Menghapus penyimpanan status buka catatan di memori lokal dan merender isi catatan secara langsung di grid maupun di dalam modal bergaya *sticky note* Neo-Brutalist.
-  - *Why*: Memenuhi permintaan pengguna agar pengunjung dapat langsung membaca seluruh curhatan kelas sekaligus tetap bisa memperbesar catatan saat diklik tanpa kerumitan fitur unduh gambar Story.
-  - *Alternatives Considered*: Membiarkan kartu tidak bisa diklik sama sekali; namun tetap menyediakan popup catatan biasa saat diklik membuat catatan yang panjang atau memiliki lampiran lagu lebih nyaman dilihat di layar ponsel.
-- **Decision 2: Penyimpanan Pesan Ketua Kelas di Cloud Firestore**
-  - *Chosen Approach*: Menyimpan setiap kiriman formulir ke koleksi khusus di Cloud Firestore dan menampilkannya secara langsung (*real-time*) pada panel Kotak Masuk khusus Admin.
-  - *Why*: Memastikan tidak ada pesan siswa yang hilang (sebelumnya hanya simulasi) dan memudahkan Ketua Kelas/Admin memeriksa pesan langsung dari dalam aplikasi tanpa perlu berpindah platform.
+- **Decision 1: Kompatibilitas Otomatis untuk Semua Anggota yang Sudah Ada**
+  - *Chosen Approach*: Jika data lagu anggota di Firestore hanya menyimpan `title`, `artist`, dan `coverUrl` (tanpa `videoId` atau `startTime`), sistem secara otomatis mencari `videoId` YouTube di latar belakang saat profil anggota dibuka dan memutar klip 30 detik mulai dari `startTime ?? 0`.
+  - *Why*: Memastikan fitur langsung berfungsi untuk **semua anggota yang sudah ada** tanpa mengharuskan Admin mengedit ulang satu per satu, sembari tetap memungkinkan Admin mengatur detik spesifik kapan saja.
+- **Decision 2: Interpolasi Waktu 50ms untuk Bar Progres Mulus**
+  - *Chosen Approach*: Menggunakan interval 50ms dengan interpolasi waktu `performance.now()` di antara pembaruan waktu YouTube IFrame API, dipadukan dengan `transition-[width] duration-75 ease-linear`.
+  - *Why*: Menghilangkan gerakan patah-patah pada bar progres saat lagu tema anggota diputar.
 
 ---
 
 ## 4. Technical Architecture & Data Strategy *(Technical Reference)*
 
-- **Architecture & Component Diagram**:
-
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                              Halaman Utama                              │
-└───────────────────┬─────────────────────────────────┬───────────────────┘
-                    │                                 │
-                    ▼                                 ▼
-┌───────────────────────────────────────┐ ┌───────────────────────────────┐
-│           Confession Board            │ │   Footer (Hubungi Ketua Kelas)│
-│ ───────────────────────────────────── │ │ ───────────────────────────── │
-│ • Grid Catatan (Langsung Terbuka)     │ │ • Formulir Bahasa Indonesia   │
-│ • Klik Catatan -> Modal Note Biasa    │ │ • Panel Kotak Masuk (Admin)   │
-│   (Warna sesuai note, tanpa unduh)    │ │   (Baca & Hapus Pesan Masuk)  │
-└───────────────────┬───────────────────┘ └───────────────┬───────────────┘
-                    │                                     │
-                    ▼                                     ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Cloud Firestore Database                        │
-│ ─────────────────────────────────────────────────────────────────────── │
-│ • Koleksi `messages` (Catatan Confession Board)                         │
-│ • Koleksi `contact_messages` (Pesan Masuk untuk Ketua Kelas)            │
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         Anggota / Roster Section                         │
+├────────────────────────────────────┬─────────────────────────────────────┤
+│   Admin Song Configurator Modal    │       Student Profile Modal         │
+│  ┌──────────────────────────────┐  │  ┌───────────────────────────────┐  │
+│  │ Search Song (iTunes API)     │  │  │ Album Cover (animate-pulse)   │  │
+│  │ Resolve Full Track Duration  │  │  │ Title & Artist (Clean Header) │  │
+│  │ Span: "MULAI BAGIAN LAGU"    │  │  │ Controls: Replay & Play/Pause │  │
+│  │ Full-Track Range Slider      │  │  │ Smooth 50ms Sliding Progress  │  │
+│  │ Button: "SIMPAN LAGU"        │  │  │ Bar + animate-pulse           │  │
+│  └──────────────┬───────────────┘  │  └───────────────┬───────────────┘  │
+└─────────────────┼──────────────────┴──────────────────┼──────────────────┘
+                  │                                     │
+                  ▼                                     ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│            Full-Song Audio Engine (YouTube IFrame API + Fallback)        │
+│  • Resolves videoId via /api/yt-search (with Piped API fallback)         │
+│  • Plays & loops 30s window [startTime, startTime + 30s]                 │
+│  • Dispatches 'note-audio-start' / 'note-audio-stop' to MusicPlayer      │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **Data Model & State**:
-  - **Entitas Pesan Ketua Kelas (`ContactMessage`)**:
-    - `id`: Penanda unik dokumen
-    - `name`: Nama pengirim (maksimal 100 karakter)
-    - `email`: Email atau kontak pengirim (maksimal 100 karakter)
-    - `message`: Isi pesan untuk Ketua Kelas (maksimal 1000 karakter)
-    - `createdAt`: Waktu pengiriman (angka *timestamp*)
+  - Memperluas tipe `Student.song` agar mendukung properti opsional yang sama dengan `Message.song`:
+    - `title: string`
+    - `artist: string`
+    - `coverUrl: string`
+    - `previewUrl?: string`
+    - `videoId?: string`
+    - `duration?: number`
+    - `startTime?: number`
 - **Interactive Component & State Mapping**:
-  - **Confession Board**:
-    - Menghapus state `revealedNotes` dan tampilan penutup *Secret Note*.
-    - Mengubah aksi klik kartu untuk langsung mengisi state `selectedNote` dan membuka modal catatan biasa dengan latar warna sesuai properti `color` pada catatan.
-  - **Footer (Hubungi Ketua Kelas)**:
-    - Menambahkan state input terkontrol (`name`, `email`, `message`, `isSubmitting`).
-    - Saat formulir dikirim, memvalidasi input dan menambahkan dokumen baru ke koleksi `contact_messages` di Firestore, lalu menampilkan umpan balik sukses.
-    - Jika pengguna memiliki peran Admin (`isAdmin`), mengaktifkan pemantau *real-time* pada koleksi `contact_messages` untuk merender daftar pesan masuk beserta aksi hapus dokumen.
+  - Saat `selectedStudent` dibuka dan memiliki `song`, memicu event `note-audio-start` untuk menjeda musik latar web, memuat `videoId` pada *hidden YouTube player*, melompat ke `startTime ?? 0`, dan menjalankan loop 30 detik dengan bar progres mulus.
+  - Saat `selectedStudent` ditutup, menghentikan pemutaran lagu profil dan memicu `note-audio-stop` agar musik latar web kembali berputar.

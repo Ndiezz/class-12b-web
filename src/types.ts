@@ -15,6 +15,10 @@ export interface Student {
     title: string;
     artist: string;
     coverUrl: string;
+    previewUrl?: string;
+    videoId?: string;
+    duration?: number;
+    startTime?: number;
   };
 }
 
@@ -62,6 +66,10 @@ export interface Message {
     title: string;
     artist: string;
     coverUrl: string;
+    previewUrl?: string;
+    videoId?: string;
+    duration?: number;
+    startTime?: number;
   };
   createdAt: number;
   isEdited?: boolean;

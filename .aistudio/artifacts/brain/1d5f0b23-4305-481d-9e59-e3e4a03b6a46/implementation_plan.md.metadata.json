@@ -1,6 +1,6 @@
 {
-  "summary":  "Rencana implementasi untuk menghapus penutup Secret Note dan mengganti popup Story menjadi tampilan Note biasa tanpa tombol unduh di Confession Board, serta menerjemahkan dan mengaktifkan fitur Hubungi Ketua Kelas dengan penyimpanan database Firestore dan Kotak Masuk Admin.",
-  "updatedAt":  "2026-10-23T15:57:39.347875717Z",
+  "summary":  "Rencana implementasi untuk menerapkan sistem pemutar potongan lagu 30 detik (gaya Instagram Note) dengan sumber audio penuh YouTube, slider durasi lagu penuh (\"MULAI BAGIAN LAGU\" & \"SIMPAN LAGU\"), serta animasi bar progres mulus dan kedap-kedip album pada fitur Anggota (Roster).",
+  "updatedAt":  "2026-10-26T08:57:21.579431296Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

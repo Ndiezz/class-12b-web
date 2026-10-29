@@ -1,155 +1,656 @@
-import { useState, useRef, useEffect } from "react";
-import { Play, Pause, SkipForward, Music, Maximize2, Minimize2 } from "lucide-react";
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import {
+  Play,
+  Pause,
+  SkipForward,
+  SkipBack,
+  Volume2,
+  VolumeX,
+  Minimize2,
+  ListMusic,
+  Disc3,
+} from 'lucide-react';
+import { AudioEqualizer } from './AudioEqualizer';
 
-// Playlist bawaan yang akan diputar otomatis (URL ini merujuk ke folder public/music/)
-const PLAYLIST = [
-  { title: "17", artist: "Tulus", url: "/music/tulus.mp3" },
-  { title: "Kita Kesana", artist: "Hindia", url: "/music/hindia.mp3" },
-  { title: "Graduation Song", artist: "Murphy Radio", url: "/music/murphy.mp3" }
+interface Track {
+  title: string;
+  artist: string;
+  videoId: string;
+  searchQuery: string;
+}
+
+const PLAYLIST: Track[] = [
+  {
+    title: '17',
+    artist: 'Tulus',
+    videoId: 'zswUe4xU-c8',
+    searchQuery: 'Tulus Tujuh Belas',
+  },
+  {
+    title: 'Kita Ke Sana',
+    artist: 'Hindia',
+    videoId: 'DrulgpXAGCA',
+    searchQuery: 'Hindia Kita Ke Sana',
+  },
+  {
+    title: 'Graduation Song',
+    artist: 'Murphy Radio',
+    videoId: 'LM9Ron2I4h0',
+    searchQuery: 'Murphy Radio Graduation Song',
+  },
 ];
 
-export default function MusicPlayer() {
+declare global {
+  interface Window {
+    YT?: any;
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
+
+export const MusicPlayer: React.FC = () => {
+  const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [hasStarted, setHasStarted] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
+  const [showPlaylist, setShowPlaylist] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   const [progress, setProgress] = useState(0);
-  
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [usingFallbackAudio, setUsingFallbackAudio] = useState(false);
+  const [waitingForInteraction, setWaitingForInteraction] = useState(true);
+
+  const ytPlayerRef = useRef<any>(null);
+  const ytContainerRef = useRef<HTMLDivElement | null>(null);
+  const fallbackAudioRef = useRef<HTMLAudioElement | null>(null);
+  const userPausedRef = useRef(false);
+  const hasStartedOnceRef = useRef(false);
+  const currentTrackIndexRef = useRef(currentTrackIndex);
+  const isPlayingRef = useRef(isPlaying);
+  const usingFallbackAudioRef = useRef(usingFallbackAudio);
+  const pausedByNoteRef = useRef(false);
+  const noteAudioActiveRef = useRef(false);
 
   useEffect(() => {
-    const initialIndex = Math.floor(Math.random() * PLAYLIST.length);
-    setCurrentIndex(initialIndex);
-    
-    const attemptAutoplay = async () => {
-      if (audioRef.current) {
-        audioRef.current.src = PLAYLIST[initialIndex].url;
-        try {
-          await audioRef.current.play();
-          setIsPlaying(true);
-          setHasStarted(true);
-        } catch (err) {
-          console.warn("Browser memblokir autoplay. Menunggu interaksi pengguna.");
+    currentTrackIndexRef.current = currentTrackIndex;
+  }, [currentTrackIndex]);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    usingFallbackAudioRef.current = usingFallbackAudio;
+  }, [usingFallbackAudio]);
+
+  const currentTrack = PLAYLIST[currentTrackIndex];
+
+  const loadFallbackTrack = useCallback(async (index: number, autoPlay: boolean) => {
+    const track = PLAYLIST[index];
+    try {
+      const res = await fetch(
+        `https://itunes.apple.com/search?term=${encodeURIComponent(track.searchQuery)}&entity=song&limit=1`
+      );
+      const data = await res.json();
+      const previewUrl = data?.results?.[0]?.previewUrl;
+      if (previewUrl && fallbackAudioRef.current) {
+        fallbackAudioRef.current.src = previewUrl;
+        fallbackAudioRef.current.volume = 0.8;
+        if (autoPlay && !userPausedRef.current && !noteAudioActiveRef.current) {
+          fallbackAudioRef.current
+            .play()
+            .then(() => {
+              setIsPlaying(true);
+              setWaitingForInteraction(false);
+              hasStartedOnceRef.current = true;
+            })
+            .catch(() => {
+              setWaitingForInteraction(true);
+            });
         }
       }
-    };
-    
-    attemptAutoplay();
+    } catch {
+      // Ignore network errors on fallback lookup
+    }
   }, []);
 
+  const attemptPlay = useCallback(() => {
+    if (userPausedRef.current) return;
+    if (noteAudioActiveRef.current) {
+      pausedByNoteRef.current = true;
+      setWaitingForInteraction(false);
+      hasStartedOnceRef.current = true;
+      return;
+    }
+
+    if (usingFallbackAudioRef.current) {
+      if (fallbackAudioRef.current) {
+        if (!fallbackAudioRef.current.src) {
+          loadFallbackTrack(currentTrackIndexRef.current, true);
+        } else {
+          fallbackAudioRef.current
+            .play()
+            .then(() => {
+              setIsPlaying(true);
+              setWaitingForInteraction(false);
+              hasStartedOnceRef.current = true;
+            })
+            .catch(() => {});
+        }
+      }
+      return;
+    }
+
+    const player = ytPlayerRef.current;
+    if (player && typeof player.playVideo === 'function') {
+      try {
+        player.unMute?.();
+        player.setVolume?.(85);
+        player.playVideo();
+      } catch {
+        // Ignore until ready
+      }
+    }
+  }, [loadFallbackTrack]);
+
+  // Listen for note audio start/stop events to auto-pause and auto-resume background music
   useEffect(() => {
-    if (hasStarted && audioRef.current) {
-      if (isPlaying) {
-        audioRef.current.play().catch(e => console.warn(e));
+    const handleNoteAudioStart = () => {
+      noteAudioActiveRef.current = true;
+      if (isPlayingRef.current || !userPausedRef.current) {
+        pausedByNoteRef.current = true;
+        setWaitingForInteraction(false);
+        hasStartedOnceRef.current = true;
+      }
+      if (usingFallbackAudioRef.current) {
+        fallbackAudioRef.current?.pause();
       } else {
-        audioRef.current.pause();
+        ytPlayerRef.current?.pauseVideo?.();
+      }
+      setIsPlaying(false);
+    };
+
+    const handleNoteAudioStop = () => {
+      noteAudioActiveRef.current = false;
+      if (pausedByNoteRef.current && !userPausedRef.current) {
+        pausedByNoteRef.current = false;
+        attemptPlay();
+      }
+    };
+
+    window.addEventListener('note-audio-start', handleNoteAudioStart);
+    window.addEventListener('note-audio-stop', handleNoteAudioStop);
+    return () => {
+      window.removeEventListener('note-audio-start', handleNoteAudioStart);
+      window.removeEventListener('note-audio-stop', handleNoteAudioStop);
+    };
+  }, [attemptPlay]);
+
+  // Initialize YouTube IFrame API
+  useEffect(() => {
+    let isMounted = true;
+
+    const createPlayer = () => {
+      if (!isMounted || !ytContainerRef.current || !window.YT?.Player) return;
+      if (ytPlayerRef.current) return;
+
+      ytPlayerRef.current = new window.YT.Player(ytContainerRef.current, {
+        height: '1',
+        width: '1',
+        videoId: PLAYLIST[currentTrackIndexRef.current].videoId,
+        playerVars: {
+          autoplay: 1,
+          controls: 0,
+          disablekb: 1,
+          fs: 0,
+          iv_load_policy: 3,
+          modestbranding: 1,
+          playsinline: 1,
+          rel: 0,
+        },
+        events: {
+          onReady: (event: any) => {
+            if (!isMounted) return;
+            try {
+              event.target.unMute();
+              event.target.setVolume(85);
+              event.target.playVideo();
+            } catch {
+              // Autoplay blocked until interaction
+            }
+          },
+          onStateChange: (event: any) => {
+            if (!isMounted) return;
+            const YTState = window.YT?.PlayerState;
+            if (!YTState) return;
+
+            if (event.data === YTState.PLAYING) {
+              setIsPlaying(true);
+              setWaitingForInteraction(false);
+              hasStartedOnceRef.current = true;
+              const dur = event.target.getDuration?.() || 0;
+              if (dur > 0) setDuration(dur);
+            } else if (event.data === YTState.PAUSED) {
+              setIsPlaying(false);
+            } else if (event.data === YTState.ENDED) {
+              const nextIndex = (currentTrackIndexRef.current + 1) % PLAYLIST.length;
+              setCurrentTrackIndex(nextIndex);
+              setProgress(0);
+              setCurrentTime(0);
+              event.target.loadVideoById(PLAYLIST[nextIndex].videoId);
+              event.target.playVideo();
+            } else if (event.data === YTState.UNSTARTED || event.data === YTState.CUED) {
+              if (!userPausedRef.current && !hasStartedOnceRef.current) {
+                setWaitingForInteraction(true);
+              }
+            }
+          },
+          onError: () => {
+            if (!isMounted) return;
+            setUsingFallbackAudio(true);
+            loadFallbackTrack(currentTrackIndexRef.current, !userPausedRef.current);
+          },
+        },
+      });
+    };
+
+    if (window.YT && window.YT.Player) {
+      createPlayer();
+    } else {
+      const existingScript = document.querySelector(
+        'script[src="https://www.youtube.com/iframe_api"]'
+      );
+      if (!existingScript) {
+        const tag = document.createElement('script');
+        tag.src = 'https://www.youtube.com/iframe_api';
+        tag.async = true;
+        tag.onerror = () => {
+          if (isMounted) {
+            setUsingFallbackAudio(true);
+            loadFallbackTrack(currentTrackIndexRef.current, true);
+          }
+        };
+        document.head.appendChild(tag);
+      }
+
+      const prevCallback = window.onYouTubeIframeAPIReady;
+      window.onYouTubeIframeAPIReady = () => {
+        if (typeof prevCallback === 'function') prevCallback();
+        createPlayer();
+      };
+    }
+
+    return () => {
+      isMounted = false;
+      if (ytPlayerRef.current && typeof ytPlayerRef.current.destroy === 'function') {
+        try {
+          ytPlayerRef.current.destroy();
+        } catch {
+          // Ignore cleanup errors
+        }
+        ytPlayerRef.current = null;
+      }
+    };
+  }, [loadFallbackTrack]);
+
+  // Unlock and play on first user touch/click/key/scroll anywhere on the screen
+  useEffect(() => {
+    if (!waitingForInteraction || isPlaying) return;
+
+    const handleFirstInteraction = () => {
+      if (!userPausedRef.current && !hasStartedOnceRef.current) {
+        attemptPlay();
+      }
+    };
+
+    window.addEventListener('click', handleFirstInteraction, { passive: true });
+    window.addEventListener('touchstart', handleFirstInteraction, { passive: true });
+    window.addEventListener('pointerdown', handleFirstInteraction, { passive: true });
+    window.addEventListener('keydown', handleFirstInteraction, { passive: true });
+    window.addEventListener('scroll', handleFirstInteraction, { passive: true });
+
+    return () => {
+      window.removeEventListener('click', handleFirstInteraction);
+      window.removeEventListener('touchstart', handleFirstInteraction);
+      window.removeEventListener('pointerdown', handleFirstInteraction);
+      window.removeEventListener('keydown', handleFirstInteraction);
+      window.removeEventListener('scroll', handleFirstInteraction);
+    };
+  }, [waitingForInteraction, isPlaying, attemptPlay]);
+
+  // Poll YouTube playback progress
+  useEffect(() => {
+    if (usingFallbackAudio || !isPlaying) return;
+
+    const interval = setInterval(() => {
+      const player = ytPlayerRef.current;
+      if (player && typeof player.getCurrentTime === 'function') {
+        const curr = player.getCurrentTime() || 0;
+        const dur = player.getDuration() || 0;
+        setCurrentTime(curr);
+        if (dur > 0) {
+          setDuration(dur);
+          setProgress((curr / dur) * 100);
+        }
+      }
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [usingFallbackAudio, isPlaying]);
+
+  const switchTrack = (nextIndex: number) => {
+    userPausedRef.current = false;
+    setCurrentTrackIndex(nextIndex);
+    setProgress(0);
+    setCurrentTime(0);
+
+    if (usingFallbackAudio) {
+      loadFallbackTrack(nextIndex, true);
+    } else if (ytPlayerRef.current && typeof ytPlayerRef.current.loadVideoById === 'function') {
+      ytPlayerRef.current.loadVideoById(PLAYLIST[nextIndex].videoId);
+      ytPlayerRef.current.playVideo();
+      setIsPlaying(true);
+    }
+  };
+
+  const togglePlay = (e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    if (isPlaying) {
+      userPausedRef.current = true;
+      if (usingFallbackAudio) {
+        fallbackAudioRef.current?.pause();
+      } else {
+        ytPlayerRef.current?.pauseVideo?.();
+      }
+      setIsPlaying(false);
+    } else {
+      userPausedRef.current = false;
+      hasStartedOnceRef.current = true;
+      setWaitingForInteraction(false);
+      if (usingFallbackAudio) {
+        if (!fallbackAudioRef.current?.src) {
+          loadFallbackTrack(currentTrackIndex, true);
+        } else {
+          fallbackAudioRef.current?.play().catch(() => {});
+          setIsPlaying(true);
+        }
+      } else {
+        ytPlayerRef.current?.unMute?.();
+        ytPlayerRef.current?.playVideo?.();
+        setIsPlaying(true);
       }
     }
-  }, [isPlaying, currentIndex, hasStarted]);
-
-  const togglePlay = () => {
-    if (!hasStarted && audioRef.current) {
-      audioRef.current.src = PLAYLIST[currentIndex].url;
-      setHasStarted(true);
-    }
-    setIsPlaying(!isPlaying);
   };
 
-  const nextSong = () => {
-    setCurrentIndex((prev) => (prev + 1) % PLAYLIST.length);
-    if (!hasStarted) setHasStarted(true);
-    setIsPlaying(true);
+  const nextTrack = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const nextIndex = (currentTrackIndex + 1) % PLAYLIST.length;
+    switchTrack(nextIndex);
   };
 
-  const handleTimeUpdate = () => {
-    if (audioRef.current) {
-      const current = audioRef.current.currentTime;
-      const duration = audioRef.current.duration;
-      if (duration > 0) {
-        setProgress((current / duration) * 100);
+  const prevTrack = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const prevIndex = (currentTrackIndex - 1 + PLAYLIST.length) % PLAYLIST.length;
+    switchTrack(prevIndex);
+  };
+
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+
+    if (usingFallbackAudio && fallbackAudioRef.current) {
+      fallbackAudioRef.current.muted = nextMuted;
+    } else if (ytPlayerRef.current) {
+      if (nextMuted) {
+        ytPlayerRef.current.mute?.();
+      } else {
+        ytPlayerRef.current.unMute?.();
       }
     }
   };
-  
-  const handleProgressBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (audioRef.current) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const percentage = Math.max(0, Math.min(100, (x / rect.width) * 100));
-      const newTime = (percentage / 100) * audioRef.current.duration;
-      audioRef.current.currentTime = newTime;
-      setProgress(percentage);
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const ratio = Math.max(0, Math.min(1, clickX / rect.width));
+
+    if (usingFallbackAudio && fallbackAudioRef.current?.duration) {
+      const targetTime = ratio * fallbackAudioRef.current.duration;
+      fallbackAudioRef.current.currentTime = targetTime;
+      setProgress(ratio * 100);
+    } else if (ytPlayerRef.current && duration > 0) {
+      const targetTime = ratio * duration;
+      ytPlayerRef.current.seekTo?.(targetTime, true);
+      setCurrentTime(targetTime);
+      setProgress(ratio * 100);
     }
   };
 
-  const currentSong = PLAYLIST[currentIndex];
+  const handleFallbackTimeUpdate = () => {
+    if (fallbackAudioRef.current) {
+      const curr = fallbackAudioRef.current.currentTime;
+      const dur = fallbackAudioRef.current.duration;
+      setCurrentTime(curr);
+      if (dur > 0) {
+        setDuration(dur);
+        setProgress((curr / dur) * 100);
+      }
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    if (!seconds || !isFinite(seconds)) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
 
   return (
-    <div className="fixed bottom-6 right-6 z-[100] flex flex-col items-end">
+    <div className="fixed bottom-6 right-6 z-[100]">
+      {/* Hidden YouTube player container */}
+      <div
+        className="pointer-events-none fixed -bottom-10 -right-10 h-px w-px overflow-hidden opacity-0"
+        aria-hidden="true"
+      >
+        <div ref={ytContainerRef} />
+      </div>
+
+      {/* Fallback HTML5 Audio */}
+      <audio
+        ref={fallbackAudioRef}
+        crossOrigin="anonymous"
+        onTimeUpdate={handleFallbackTimeUpdate}
+        onEnded={() => nextTrack()}
+      />
+
       {isMinimized ? (
-        <button 
+        <button
           onClick={() => setIsMinimized(false)}
-          className="bg-white/50 backdrop-blur-md border border-white/50 p-3 rounded-full shadow-lg shadow-black/10 hover:scale-105 active:scale-95 transition-all text-black"
+          className="w-12 h-12 rounded-full bg-black/85 backdrop-blur-xl border border-white/15 flex items-center justify-center text-white shadow-2xl hover:scale-105 transition-transform group relative"
+          title={`${currentTrack.title} - ${currentTrack.artist}`}
         >
-          <Music size={20} className={isPlaying ? "animate-pulse" : ""} />
+          {isPlaying && !isMuted ? (
+            <AudioEqualizer
+              isPlaying={isPlaying}
+              isMuted={isMuted}
+              audioElement={usingFallbackAudio ? fallbackAudioRef.current : null}
+              currentTime={currentTime}
+              trackSeed={currentTrackIndex}
+              variant="mini"
+            />
+          ) : (
+            <Disc3
+              className={`w-5 h-5 ${
+                isPlaying ? 'text-emerald-400 animate-spin' : 'text-zinc-400'
+              }`}
+              style={{ animationDuration: '4s' }}
+            />
+          )}
+          {isPlaying && (
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full animate-ping" />
+          )}
+          {isPlaying && (
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full" />
+          )}
         </button>
       ) : (
-        <div className="w-72 max-w-[calc(100vw-2rem)] bg-white/30 backdrop-blur-md border border-white/50 rounded-2xl p-3 flex flex-col gap-2 shadow-lg shadow-black/10 text-black">
-          {/* Atas: Info & Kontrol */}
-          <div className="flex items-center gap-3 w-full">
-            <div className="bg-white/50 p-2 rounded-xl shrink-0">
-              <Music size={18} className="text-black/80" />
-            </div>
-            
-            <div className="flex flex-col flex-1 overflow-hidden">
-              <span className="text-xs font-black uppercase truncate">
-                {currentSong.title}
-              </span>
-              <span className="text-[10px] font-bold opacity-70 truncate">
-                {currentSong.artist}
-              </span>
+        <div className="bg-black/85 backdrop-blur-xl border border-white/15 rounded-2xl p-3.5 shadow-2xl flex flex-col gap-2.5 w-76 transition-all">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 overflow-hidden">
+              <div
+                className={`w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0 border border-white/10 ${
+                  isPlaying ? 'text-emerald-400' : 'text-zinc-400'
+                }`}
+              >
+                <Disc3
+                  className={`w-5 h-5 ${isPlaying ? 'animate-spin' : ''}`}
+                  style={{ animationDuration: '4s' }}
+                />
+              </div>
+              <div className="truncate">
+                <p className="text-xs font-semibold text-white truncate">
+                  {currentTrack.title}
+                </p>
+                <p className="text-[11px] text-zinc-400 truncate">
+                  {currentTrack.artist}
+                </p>
+              </div>
             </div>
 
             <div className="flex items-center gap-1 shrink-0">
-              <button 
+              <button
+                onClick={prevTrack}
+                className="w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
+                title="Lagu Sebelumnya"
+              >
+                <SkipBack className="w-3.5 h-3.5 fill-current" />
+              </button>
+              <button
                 onClick={togglePlay}
-                className="bg-black/90 text-white p-2 rounded-full hover:scale-110 active:scale-95 transition-transform shadow-md"
+                className="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition-transform shadow"
+                title={isPlaying ? 'Jeda' : 'Putar'}
               >
-                {isPlaying ? <Pause size={12} fill="currentColor" /> : <Play size={12} fill="currentColor" className="ml-0.5" />}
+                {isPlaying ? (
+                  <Pause className="w-3.5 h-3.5 fill-current" />
+                ) : (
+                  <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                )}
               </button>
-              <button 
-                onClick={nextSong}
-                className="hover:text-neo-pink p-1.5 transition-colors bg-white/50 rounded-full hover:bg-white/80 shadow-sm hover:scale-105 active:scale-95"
+              <button
+                onClick={nextTrack}
+                className="w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
+                title="Lagu Selanjutnya"
               >
-                <SkipForward size={12} />
+                <SkipForward className="w-3.5 h-3.5 fill-current" />
               </button>
-              <button 
+              <button
+                onClick={() => setShowPlaylist((prev) => !prev)}
+                className={`w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors ${
+                  showPlaylist ? 'text-emerald-400 bg-white/10' : 'text-zinc-400 hover:text-white'
+                }`}
+                title="Daftar Lagu"
+              >
+                <ListMusic className="w-3.5 h-3.5" />
+              </button>
+              <button
                 onClick={() => setIsMinimized(true)}
-                className="p-1.5 opacity-60 hover:opacity-100 transition-opacity ml-1"
+                className="w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
+                title="Kecilkan"
               >
-                <Minimize2 size={14} />
+                <Minimize2 className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
-          {/* Bawah: Progress Bar */}
-          <div 
-            className="w-full h-1.5 bg-black/10 rounded-full overflow-hidden cursor-pointer mt-1"
-            onClick={handleProgressBarClick}
-          >
-            <div 
-              className="h-full bg-black/80 transition-all duration-100 ease-linear"
-              style={{ width: `${progress}%` }}
-            />
+          {/* Dynamic Amplitude-Reactive Visual Equalizer */}
+          <AudioEqualizer
+            isPlaying={isPlaying}
+            isMuted={isMuted}
+            audioElement={usingFallbackAudio ? fallbackAudioRef.current : null}
+            currentTime={currentTime}
+            trackSeed={currentTrackIndex}
+          />
+
+          {/* Interactive Progress Bar */}
+          <div className="flex flex-col gap-1">
+            <div
+              onClick={handleSeek}
+              className="w-full h-1.5 bg-white/15 rounded-full overflow-hidden cursor-pointer group py-0.5"
+            >
+              <div
+                className="h-full bg-emerald-400 group-hover:bg-emerald-300 rounded-full transition-all duration-150"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[10px] text-zinc-400">
+              <span>{formatTime(currentTime)}</span>
+              <div className="flex items-center gap-2">
+                {waitingForInteraction && !isPlaying && (
+                  <span className="text-emerald-400 animate-pulse">
+                    Ketuk layar untuk memutar
+                  </span>
+                )}
+                <button
+                  onClick={toggleMute}
+                  className="hover:text-white transition-colors"
+                  title={isMuted ? 'Bunyikan' : 'Bisukan'}
+                >
+                  {isMuted ? (
+                    <VolumeX className="w-3 h-3 text-rose-400" />
+                  ) : (
+                    <Volume2 className="w-3 h-3" />
+                  )}
+                </button>
+                <span>{formatTime(duration)}</span>
+              </div>
+            </div>
           </div>
+
+          {/* Tracklist Selector */}
+          {showPlaylist && (
+            <div className="pt-2 border-t border-white/10 flex flex-col gap-1">
+              {PLAYLIST.map((track, idx) => {
+                const active = idx === currentTrackIndex;
+                return (
+                  <button
+                    key={track.videoId}
+                    onClick={() => switchTrack(idx)}
+                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between transition-colors ${
+                      active
+                        ? 'bg-emerald-500/20 text-emerald-300 font-medium'
+                        : 'text-zinc-300 hover:bg-white/5'
+                    }`}
+                  >
+                    <span className="truncate">
+                      {idx + 1}. {track.title} — {track.artist}
+                    </span>
+                    {active && isPlaying && (
+                      <div className="flex items-center gap-1.5 ml-2 shrink-0">
+                        <AudioEqualizer
+                          isPlaying={isPlaying}
+                          isMuted={isMuted}
+                          audioElement={usingFallbackAudio ? fallbackAudioRef.current : null}
+                          currentTime={currentTime}
+                          trackSeed={currentTrackIndex}
+                          variant="mini"
+                        />
+                        <span className="text-[10px] text-emerald-400">
+                          Diputar
+                        </span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
-      <audio 
-        ref={audioRef}
-        onEnded={nextSong}
-        onTimeUpdate={handleTimeUpdate}
-        src={currentSong.url}
-      />
     </div>
   );
-}
+};
+
+export default MusicPlayer;
+
