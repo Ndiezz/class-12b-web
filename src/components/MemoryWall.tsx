@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, arrayUnion, setDoc } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, arrayUnion, setDoc, runTransaction } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
+import { getOrCreateClientId } from "@/src/lib/clientId";
 import { useRole } from "@/src/hooks/useRole";
 import { GalleryImage } from "@/src/types";
 import { NeoCard } from "./ui/NeoCard";
@@ -29,6 +30,10 @@ export default function MemoryWall() {
   const [loading, setLoading] = useState(true);
   const [commentText, setCommentText] = useState("");
   const [commentNickname, setCommentNickname] = useState("");
+  const [pendingKeys, setPendingKeys] = useState<Record<string, boolean>>({});
+  const pendingLocksRef = useRef<Set<string>>(new Set());
+  const clientId = getOrCreateClientId();
+
   useEffect(() => {
     if (selectedImg) document.body.style.overflow = "hidden";
     else document.body.style.overflow = "";
@@ -51,7 +56,15 @@ export default function MemoryWall() {
     const finalUrl = parseImageUrl(newImage.url);
     
     try {
-      await addDoc(collection(db, "gallery"), { url: finalUrl, caption: newImage.caption, createdAt: Date.now(), likes: [], comments: [] });
+      await addDoc(collection(db, "gallery"), {
+        url: finalUrl,
+        caption: newImage.caption,
+        createdAt: Date.now(),
+        likes: [],
+        reactions: {},
+        userReactions: {},
+        comments: []
+      });
       setNewImage({ url: "", caption: "" });
     } catch (err) {
       console.error(err);
@@ -81,51 +94,136 @@ export default function MemoryWall() {
     }
   };
 
+  const getSelectedEmoji = (img: GalleryImage): string | null => {
+    if (img.userReactions && img.userReactions[clientId]) {
+      return img.userReactions[clientId];
+    }
+    if (img.id) {
+      try {
+        return localStorage.getItem(`selected_emoji_${img.id}`);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  };
+
   const handleReaction = async (e: React.MouseEvent, img: GalleryImage, emoji: string) => {
     e.stopPropagation();
     if (!img.id) return;
 
-    const spamKey = `emoji_spam_${img.id}`;
-    const count = parseInt(localStorage.getItem(spamKey) || "0", 10);
-    
-    if (count >= 3) {
-      toast.error("Maksimal 3 emoji untuk foto ini!", { id: 'app-toast', duration: 3000 });
-      return;
-    }
+    const lockKey = `react_${img.id}`;
+    if (pendingLocksRef.current.has(lockKey)) return;
+
+    pendingLocksRef.current.add(lockKey);
+    setPendingKeys(prev => ({ ...prev, [lockKey]: true }));
+
+    const storageKey = `selected_emoji_${img.id}`;
 
     try {
-      const currentReactions = img.reactions || {};
-      await updateDoc(doc(db, "gallery", img.id), {
-        [`reactions.${emoji}`]: (currentReactions[emoji] || 0) + 1
+      const imgRef = doc(db, "gallery", img.id);
+      let actionResult: "added" | "switched" | "removed" = "added";
+
+      await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(imgRef);
+        if (!snap.exists()) return;
+
+        const data = snap.data() as GalleryImage;
+        const reactions: Record<string, number> = { ...(data.reactions || {}) };
+        const userReactions: Record<string, string> = { ...(data.userReactions || {}) };
+
+        let previousEmoji: string | undefined = userReactions[clientId];
+        if (!previousEmoji) {
+          try {
+            const localSaved = localStorage.getItem(storageKey);
+            if (localSaved && (reactions[localSaved] || 0) > 0) {
+              previousEmoji = localSaved;
+            }
+          } catch {
+            // ignore storage errors
+          }
+        }
+
+        if (previousEmoji === emoji) {
+          reactions[emoji] = Math.max(0, (reactions[emoji] || 1) - 1);
+          delete userReactions[clientId];
+          actionResult = "removed";
+        } else if (previousEmoji && previousEmoji !== emoji) {
+          reactions[previousEmoji] = Math.max(0, (reactions[previousEmoji] || 1) - 1);
+          reactions[emoji] = (reactions[emoji] || 0) + 1;
+          userReactions[clientId] = emoji;
+          actionResult = "switched";
+        } else {
+          reactions[emoji] = (reactions[emoji] || 0) + 1;
+          userReactions[clientId] = emoji;
+          actionResult = "added";
+        }
+
+        transaction.update(imgRef, {
+          reactions,
+          userReactions
+        });
       });
-      localStorage.setItem(spamKey, (count + 1).toString());
+
+      try {
+        localStorage.removeItem(`emoji_spam_${img.id}`);
+        if (actionResult === "removed") {
+          localStorage.removeItem(storageKey);
+        } else {
+          localStorage.setItem(storageKey, emoji);
+        }
+      } catch {
+        // ignore storage errors
+      }
     } catch (err) {
       console.error("Error reacting:", err);
+      toast.error("Gagal memperbarui reaksi emoji!", { id: "app-toast", duration: 2500 });
+    } finally {
+      pendingLocksRef.current.delete(lockKey);
+      setPendingKeys(prev => {
+        const next = { ...prev };
+        delete next[lockKey];
+        return next;
+      });
     }
   };
 
   const handleLike = async (e: React.MouseEvent, img: GalleryImage) => {
     e.stopPropagation();
     if (!img.id) return;
-    
-    // We'll just generate a simple local ID if one doesn't exist to track likes loosely
-    let localId = localStorage.getItem("local_user_id");
-    if (!localId) {
-      localId = Math.random().toString(36).substr(2, 9);
-      localStorage.setItem("local_user_id", localId);
-    }
 
-    const likes = img.likes || [];
-    const hasLiked = likes.includes(localId);
+    const lockKey = `like_${img.id}`;
+    if (pendingLocksRef.current.has(lockKey)) return;
+
+    pendingLocksRef.current.add(lockKey);
+    setPendingKeys(prev => ({ ...prev, [lockKey]: true }));
 
     try {
-      if (!hasLiked) {
-        await updateDoc(doc(db, "gallery", img.id), {
-          likes: arrayUnion(localId)
-        });
-      }
+      const imgRef = doc(db, "gallery", img.id);
+      await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(imgRef);
+        if (!snap.exists()) return;
+
+        const data = snap.data() as GalleryImage;
+        const currentLikes = Array.isArray(data.likes) ? [...data.likes] : [];
+        const hasLiked = currentLikes.includes(clientId);
+
+        const updatedLikes = hasLiked
+          ? currentLikes.filter(id => id !== clientId)
+          : [...currentLikes, clientId];
+
+        transaction.update(imgRef, { likes: updatedLikes });
+      });
     } catch (err) {
       console.error("Error liking:", err);
+      toast.error("Gagal memperbarui like!", { id: "app-toast", duration: 2500 });
+    } finally {
+      pendingLocksRef.current.delete(lockKey);
+      setPendingKeys(prev => {
+        const next = { ...prev };
+        delete next[lockKey];
+        return next;
+      });
     }
   };
 
@@ -211,8 +309,13 @@ export default function MemoryWall() {
       )}
 
         {!loading && images.map((img) => {
-          const likesCount = (img.likes || []).length;
+          const likesList = img.likes || [];
+          const likesCount = likesList.length;
+          const hasLiked = likesList.includes(clientId);
           const commentsCount = (img.comments || []).length;
+          const activeEmoji = getSelectedEmoji(img);
+          const isLikePending = !!pendingKeys[`like_${img.id}`];
+          const isReactPending = !!pendingKeys[`react_${img.id}`];
           
           return (
             <div 
@@ -236,23 +339,43 @@ export default function MemoryWall() {
               </div>
               
               <div className="flex justify-between items-center mt-2 px-1 border-b-2 border-[#000] pb-1 mb-1">
-                <button onClick={(e) => handleLike(e, img)} className="flex items-center gap-1 text-xs font-bold hover:text-neo-pink transition-colors">
-                  <Heart size={14} className={likesCount > 0 ? "fill-neo-pink text-neo-pink" : ""} /> {likesCount}
+                <button
+                  type="button"
+                  disabled={isLikePending}
+                  onClick={(e) => handleLike(e, img)}
+                  title={hasLiked ? "Batalkan Like" : "Sukai Foto"}
+                  className={`flex items-center gap-1 text-xs font-bold transition-colors tabular-nums ${
+                    hasLiked ? "text-neo-pink" : "text-[#000] hover:text-neo-pink"
+                  } ${isLikePending ? "opacity-60 cursor-wait" : ""}`}
+                >
+                  <Heart size={14} className={hasLiked ? "fill-neo-pink text-neo-pink scale-110 transition-transform" : ""} /> {likesCount}
                 </button>
-                <div className="flex items-center gap-1 text-xs font-bold text-[#6b7280]">
+                <div className="flex items-center gap-1 text-xs font-bold text-[#6b7280] tabular-nums">
                   <MessageCircle size={14} /> {commentsCount}
                 </div>
               </div>
               <div className="flex flex-wrap items-center gap-1.5 mt-2 px-1">
-                {['❤️', '😂', '🔥', '👏', '😢'].map(emoji => (
-                  <button 
-                    key={emoji} 
-                    onClick={(e) => handleReaction(e, img, emoji)}
-                    className="text-[12px] bg-[#E5E5EA] border border-[#D1D1D6] rounded-full px-2 py-0.5 shadow-sm hover:bg-[#D1D1D6] active:bg-[#C7C7CC] transition-colors flex items-center gap-1">
-                    <span>{emoji}</span>
-                    <span className="font-semibold text-[10px] text-[#8E8E93]">{img.reactions?.[emoji] || 0}</span>
-                  </button>
-                ))}
+                {['❤️', '😂', '🔥', '👏', '😢'].map(emoji => {
+                  const isSelected = activeEmoji === emoji;
+                  const count = img.reactions?.[emoji] || 0;
+                  return (
+                    <button 
+                      key={emoji}
+                      type="button"
+                      disabled={isReactPending}
+                      onClick={(e) => handleReaction(e, img, emoji)}
+                      title={isSelected ? "Klik untuk batalkan reaksi" : activeEmoji ? "Klik untuk ganti reaksi ke emoji ini" : "Berikan reaksi"}
+                      className={`text-[12px] rounded-full px-2 py-0.5 transition-all flex items-center gap-1 tabular-nums ${
+                        isSelected
+                          ? "bg-neo-yellow border-2 border-[#000] shadow-[2px_2px_0_0_#000] font-black text-[#000] -translate-y-0.5"
+                          : "bg-[#E5E5EA] border border-[#D1D1D6] shadow-sm hover:bg-[#D1D1D6] active:bg-[#C7C7CC] text-[#000]"
+                      } ${isReactPending ? "opacity-60 cursor-wait" : ""}`}
+                    >
+                      <span>{emoji}</span>
+                      <span className={`text-[10px] ${isSelected ? "font-black text-[#000]" : "font-semibold text-[#8E8E93]"}`}>{count}</span>
+                    </button>
+                  );
+                })}
               </div>
               {img.caption && (
                 <p className="mt-1 font-bold text-left uppercase tracking-wide px-1 sm:px-2 pb-1 sm:pb-2 text-[10px] sm:text-xs break-words line-clamp-2 sm:line-clamp-none">

@@ -10,42 +10,41 @@ import {
   ListMusic,
   Disc3,
 } from 'lucide-react';
-import { AudioEqualizer } from './AudioEqualizer';
+import {
+  resolveSongStream,
+  preloadSongStream,
+  playResolvedStream,
+  detachAudioStream,
+  unlockAudioOnGesture,
+} from '@/src/lib/audioStream';
 
 interface Track {
   title: string;
   artist: string;
-  videoId: string;
-  searchQuery: string;
+  id: string;
+  targetDuration: number;
 }
 
 const PLAYLIST: Track[] = [
   {
-    title: '17',
+    title: 'Tujuh Belas',
     artist: 'Tulus',
-    videoId: 'zswUe4xU-c8',
-    searchQuery: 'Tulus Tujuh Belas',
+    id: 'tulus-17',
+    targetDuration: 255,
   },
   {
     title: 'Kita Ke Sana',
     artist: 'Hindia',
-    videoId: 'DrulgpXAGCA',
-    searchQuery: 'Hindia Kita Ke Sana',
+    id: 'hindia-kita-ke-sana',
+    targetDuration: 283,
   },
   {
     title: 'Graduation Song',
     artist: 'Murphy Radio',
-    videoId: 'LM9Ron2I4h0',
-    searchQuery: 'Murphy Radio Graduation Song',
+    id: 'murphy-radio-graduation-song',
+    targetDuration: 336,
   },
 ];
-
-declare global {
-  interface Window {
-    YT?: any;
-    onYouTubeIframeAPIReady?: () => void;
-  }
-}
 
 export const MusicPlayer: React.FC = () => {
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0);
@@ -53,20 +52,25 @@ export const MusicPlayer: React.FC = () => {
   const [isMinimized, setIsMinimized] = useState(false);
   const [showPlaylist, setShowPlaylist] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState(0.85);
+  const [showVolumeSlider, setShowVolumeSlider] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [usingFallbackAudio, setUsingFallbackAudio] = useState(false);
+  const [duration, setDuration] = useState(PLAYLIST[0].targetDuration);
   const [waitingForInteraction, setWaitingForInteraction] = useState(true);
 
-  const ytPlayerRef = useRef<any>(null);
-  const ytContainerRef = useRef<HTMLDivElement | null>(null);
-  const fallbackAudioRef = useRef<HTMLAudioElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const volumePopoverRef = useRef<HTMLDivElement | null>(null);
+  const volumeTrackRef = useRef<HTMLDivElement | null>(null);
+  const previousVolumeRef = useRef(0.85);
+  const cleanupStreamRef = useRef<(() => void) | null>(null);
+  const loadedTrackIndexRef = useRef<number | null>(null);
   const userPausedRef = useRef(false);
   const hasStartedOnceRef = useRef(false);
   const currentTrackIndexRef = useRef(currentTrackIndex);
   const isPlayingRef = useRef(isPlaying);
-  const usingFallbackAudioRef = useRef(usingFallbackAudio);
+  const isMutedRef = useRef(isMuted);
+  const volumeRef = useRef(volume);
   const pausedByNoteRef = useRef(false);
   const noteAudioActiveRef = useRef(false);
 
@@ -79,38 +83,86 @@ export const MusicPlayer: React.FC = () => {
   }, [isPlaying]);
 
   useEffect(() => {
-    usingFallbackAudioRef.current = usingFallbackAudio;
-  }, [usingFallbackAudio]);
+    isMutedRef.current = isMuted;
+  }, [isMuted]);
+
+  useEffect(() => {
+    volumeRef.current = volume;
+  }, [volume]);
+
+  // Close vertical volume slider when clicking outside
+  useEffect(() => {
+    if (!showVolumeSlider) return;
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      if (
+        volumePopoverRef.current &&
+        !volumePopoverRef.current.contains(e.target as Node)
+      ) {
+        setShowVolumeSlider(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside, { passive: true });
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, [showVolumeSlider]);
 
   const currentTrack = PLAYLIST[currentTrackIndex];
 
-  const loadFallbackTrack = useCallback(async (index: number, autoPlay: boolean) => {
+  // Preload all playlist tracks on mount for instant ad-free switching
+  useEffect(() => {
+    PLAYLIST.forEach((track) => {
+      preloadSongStream(track.title, track.artist, undefined, track.targetDuration);
+    });
+  }, []);
+
+  const loadAndPlayTrack = useCallback(async (index: number, autoPlay: boolean) => {
     const track = PLAYLIST[index];
-    try {
-      const res = await fetch(
-        `https://itunes.apple.com/search?term=${encodeURIComponent(track.searchQuery)}&entity=song&limit=1`
-      );
-      const data = await res.json();
-      const previewUrl = data?.results?.[0]?.previewUrl;
-      if (previewUrl && fallbackAudioRef.current) {
-        fallbackAudioRef.current.src = previewUrl;
-        fallbackAudioRef.current.volume = 0.8;
-        if (autoPlay && !userPausedRef.current && !noteAudioActiveRef.current) {
-          fallbackAudioRef.current
-            .play()
-            .then(() => {
-              setIsPlaying(true);
-              setWaitingForInteraction(false);
-              hasStartedOnceRef.current = true;
-            })
-            .catch(() => {
-              setWaitingForInteraction(true);
-            });
-        }
-      }
-    } catch {
-      // Ignore network errors on fallback lookup
+    const audio = audioRef.current;
+    if (!audio || !track) return;
+
+    if (cleanupStreamRef.current) {
+      cleanupStreamRef.current();
+      cleanupStreamRef.current = null;
     }
+
+    loadedTrackIndexRef.current = index;
+    setDuration(track.targetDuration);
+
+    const stream = await resolveSongStream(
+      track.title,
+      track.artist,
+      undefined,
+      track.targetDuration
+    );
+
+    if (!stream || currentTrackIndexRef.current !== index) return;
+
+    const shouldAutoPlay =
+      autoPlay && !userPausedRef.current && !noteAudioActiveRef.current;
+
+    cleanupStreamRef.current = playResolvedStream({
+      audio,
+      stream,
+      startTime: 0,
+      volume: volumeRef.current,
+      muted: isMutedRef.current,
+      autoPlay: shouldAutoPlay,
+      onReady: (dur) => {
+        if (dur > 0) setDuration(dur);
+      },
+      onPlayStateChange: (playing) => {
+        setIsPlaying(playing);
+        if (playing) {
+          setWaitingForInteraction(false);
+          hasStartedOnceRef.current = true;
+        } else if (!userPausedRef.current && !hasStartedOnceRef.current) {
+          setWaitingForInteraction(true);
+        }
+      },
+    });
   }, []);
 
   const attemptPlay = useCallback(() => {
@@ -122,37 +174,42 @@ export const MusicPlayer: React.FC = () => {
       return;
     }
 
-    if (usingFallbackAudioRef.current) {
-      if (fallbackAudioRef.current) {
-        if (!fallbackAudioRef.current.src) {
-          loadFallbackTrack(currentTrackIndexRef.current, true);
-        } else {
-          fallbackAudioRef.current
-            .play()
-            .then(() => {
-              setIsPlaying(true);
-              setWaitingForInteraction(false);
-              hasStartedOnceRef.current = true;
-            })
-            .catch(() => {});
-        }
-      }
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (loadedTrackIndexRef.current !== currentTrackIndexRef.current || !audio.src) {
+      unlockAudioOnGesture(audio);
+      void loadAndPlayTrack(currentTrackIndexRef.current, true);
       return;
     }
 
-    const player = ytPlayerRef.current;
-    if (player && typeof player.playVideo === 'function') {
-      try {
-        player.unMute?.();
-        player.setVolume?.(85);
-        player.playVideo();
-      } catch {
-        // Ignore until ready
-      }
-    }
-  }, [loadFallbackTrack]);
+    audio.volume = volumeRef.current;
+    audio.muted = isMutedRef.current;
+    audio
+      .play()
+      .then(() => {
+        setIsPlaying(true);
+        setWaitingForInteraction(false);
+        hasStartedOnceRef.current = true;
+      })
+      .catch(() => {
+        setWaitingForInteraction(true);
+      });
+  }, [loadAndPlayTrack]);
 
-  // Listen for note audio start/stop events to auto-pause and auto-resume background music
+  // Initial load on mount
+  useEffect(() => {
+    void loadAndPlayTrack(0, true);
+    return () => {
+      if (cleanupStreamRef.current) {
+        cleanupStreamRef.current();
+        cleanupStreamRef.current = null;
+      }
+      detachAudioStream(audioRef.current);
+    };
+  }, [loadAndPlayTrack]);
+
+  // Listen for note/roster audio start/stop events to auto-pause and auto-resume background music
   useEffect(() => {
     const handleNoteAudioStart = () => {
       noteAudioActiveRef.current = true;
@@ -161,11 +218,7 @@ export const MusicPlayer: React.FC = () => {
         setWaitingForInteraction(false);
         hasStartedOnceRef.current = true;
       }
-      if (usingFallbackAudioRef.current) {
-        fallbackAudioRef.current?.pause();
-      } else {
-        ytPlayerRef.current?.pauseVideo?.();
-      }
+      audioRef.current?.pause();
       setIsPlaying(false);
     };
 
@@ -185,114 +238,7 @@ export const MusicPlayer: React.FC = () => {
     };
   }, [attemptPlay]);
 
-  // Initialize YouTube IFrame API
-  useEffect(() => {
-    let isMounted = true;
-
-    const createPlayer = () => {
-      if (!isMounted || !ytContainerRef.current || !window.YT?.Player) return;
-      if (ytPlayerRef.current) return;
-
-      ytPlayerRef.current = new window.YT.Player(ytContainerRef.current, {
-        height: '1',
-        width: '1',
-        videoId: PLAYLIST[currentTrackIndexRef.current].videoId,
-        playerVars: {
-          autoplay: 1,
-          controls: 0,
-          disablekb: 1,
-          fs: 0,
-          iv_load_policy: 3,
-          modestbranding: 1,
-          playsinline: 1,
-          rel: 0,
-        },
-        events: {
-          onReady: (event: any) => {
-            if (!isMounted) return;
-            try {
-              event.target.unMute();
-              event.target.setVolume(85);
-              event.target.playVideo();
-            } catch {
-              // Autoplay blocked until interaction
-            }
-          },
-          onStateChange: (event: any) => {
-            if (!isMounted) return;
-            const YTState = window.YT?.PlayerState;
-            if (!YTState) return;
-
-            if (event.data === YTState.PLAYING) {
-              setIsPlaying(true);
-              setWaitingForInteraction(false);
-              hasStartedOnceRef.current = true;
-              const dur = event.target.getDuration?.() || 0;
-              if (dur > 0) setDuration(dur);
-            } else if (event.data === YTState.PAUSED) {
-              setIsPlaying(false);
-            } else if (event.data === YTState.ENDED) {
-              const nextIndex = (currentTrackIndexRef.current + 1) % PLAYLIST.length;
-              setCurrentTrackIndex(nextIndex);
-              setProgress(0);
-              setCurrentTime(0);
-              event.target.loadVideoById(PLAYLIST[nextIndex].videoId);
-              event.target.playVideo();
-            } else if (event.data === YTState.UNSTARTED || event.data === YTState.CUED) {
-              if (!userPausedRef.current && !hasStartedOnceRef.current) {
-                setWaitingForInteraction(true);
-              }
-            }
-          },
-          onError: () => {
-            if (!isMounted) return;
-            setUsingFallbackAudio(true);
-            loadFallbackTrack(currentTrackIndexRef.current, !userPausedRef.current);
-          },
-        },
-      });
-    };
-
-    if (window.YT && window.YT.Player) {
-      createPlayer();
-    } else {
-      const existingScript = document.querySelector(
-        'script[src="https://www.youtube.com/iframe_api"]'
-      );
-      if (!existingScript) {
-        const tag = document.createElement('script');
-        tag.src = 'https://www.youtube.com/iframe_api';
-        tag.async = true;
-        tag.onerror = () => {
-          if (isMounted) {
-            setUsingFallbackAudio(true);
-            loadFallbackTrack(currentTrackIndexRef.current, true);
-          }
-        };
-        document.head.appendChild(tag);
-      }
-
-      const prevCallback = window.onYouTubeIframeAPIReady;
-      window.onYouTubeIframeAPIReady = () => {
-        if (typeof prevCallback === 'function') prevCallback();
-        createPlayer();
-      };
-    }
-
-    return () => {
-      isMounted = false;
-      if (ytPlayerRef.current && typeof ytPlayerRef.current.destroy === 'function') {
-        try {
-          ytPlayerRef.current.destroy();
-        } catch {
-          // Ignore cleanup errors
-        }
-        ytPlayerRef.current = null;
-      }
-    };
-  }, [loadFallbackTrack]);
-
-  // Unlock and play on first user touch/click/key/scroll anywhere on the screen
+  // Unlock and play on first user touch/click/key anywhere on the screen
   useEffect(() => {
     if (!waitingForInteraction || isPlaying) return;
 
@@ -306,78 +252,50 @@ export const MusicPlayer: React.FC = () => {
     window.addEventListener('touchstart', handleFirstInteraction, { passive: true });
     window.addEventListener('pointerdown', handleFirstInteraction, { passive: true });
     window.addEventListener('keydown', handleFirstInteraction, { passive: true });
-    window.addEventListener('scroll', handleFirstInteraction, { passive: true });
 
     return () => {
       window.removeEventListener('click', handleFirstInteraction);
       window.removeEventListener('touchstart', handleFirstInteraction);
       window.removeEventListener('pointerdown', handleFirstInteraction);
       window.removeEventListener('keydown', handleFirstInteraction);
-      window.removeEventListener('scroll', handleFirstInteraction);
     };
   }, [waitingForInteraction, isPlaying, attemptPlay]);
 
-  // Poll YouTube playback progress
-  useEffect(() => {
-    if (usingFallbackAudio || !isPlaying) return;
-
-    const interval = setInterval(() => {
-      const player = ytPlayerRef.current;
-      if (player && typeof player.getCurrentTime === 'function') {
-        const curr = player.getCurrentTime() || 0;
-        const dur = player.getDuration() || 0;
-        setCurrentTime(curr);
-        if (dur > 0) {
-          setDuration(dur);
-          setProgress((curr / dur) * 100);
-        }
-      }
-    }, 500);
-
-    return () => clearInterval(interval);
-  }, [usingFallbackAudio, isPlaying]);
-
   const switchTrack = (nextIndex: number) => {
     userPausedRef.current = false;
+    hasStartedOnceRef.current = true;
+    setWaitingForInteraction(false);
     setCurrentTrackIndex(nextIndex);
     setProgress(0);
     setCurrentTime(0);
 
-    if (usingFallbackAudio) {
-      loadFallbackTrack(nextIndex, true);
-    } else if (ytPlayerRef.current && typeof ytPlayerRef.current.loadVideoById === 'function') {
-      ytPlayerRef.current.loadVideoById(PLAYLIST[nextIndex].videoId);
-      ytPlayerRef.current.playVideo();
-      setIsPlaying(true);
+    if (audioRef.current) {
+      unlockAudioOnGesture(audioRef.current);
     }
+    void loadAndPlayTrack(nextIndex, true);
   };
 
   const togglePlay = (e: React.MouseEvent) => {
     e.stopPropagation();
+    const audio = audioRef.current;
+    if (!audio) return;
 
     if (isPlaying) {
       userPausedRef.current = true;
-      if (usingFallbackAudio) {
-        fallbackAudioRef.current?.pause();
-      } else {
-        ytPlayerRef.current?.pauseVideo?.();
-      }
+      audio.pause();
       setIsPlaying(false);
     } else {
       userPausedRef.current = false;
       hasStartedOnceRef.current = true;
       setWaitingForInteraction(false);
-      if (usingFallbackAudio) {
-        if (!fallbackAudioRef.current?.src) {
-          loadFallbackTrack(currentTrackIndex, true);
-        } else {
-          fallbackAudioRef.current?.play().catch(() => {});
-          setIsPlaying(true);
-        }
+      if (loadedTrackIndexRef.current !== currentTrackIndex || !audio.src) {
+        unlockAudioOnGesture(audio);
+        void loadAndPlayTrack(currentTrackIndex, true);
       } else {
-        ytPlayerRef.current?.unMute?.();
-        ytPlayerRef.current?.playVideo?.();
-        setIsPlaying(true);
+        audio
+          .play()
+          .then(() => setIsPlaying(true))
+          .catch(() => {});
       }
     }
   };
@@ -394,49 +312,102 @@ export const MusicPlayer: React.FC = () => {
     switchTrack(prevIndex);
   };
 
+  const applyVolumeLevel = useCallback((nextVolume: number) => {
+    const clamped = Math.max(0, Math.min(1, nextVolume));
+    setVolume(clamped);
+    volumeRef.current = clamped;
+
+    if (clamped > 0) {
+      previousVolumeRef.current = clamped;
+      setIsMuted(false);
+      isMutedRef.current = false;
+    } else {
+      setIsMuted(true);
+      isMutedRef.current = true;
+    }
+
+    if (audioRef.current) {
+      audioRef.current.volume = clamped;
+      audioRef.current.muted = clamped === 0;
+    }
+  }, []);
+
   const toggleMute = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const nextMuted = !isMuted;
-    setIsMuted(nextMuted);
-
-    if (usingFallbackAudio && fallbackAudioRef.current) {
-      fallbackAudioRef.current.muted = nextMuted;
-    } else if (ytPlayerRef.current) {
-      if (nextMuted) {
-        ytPlayerRef.current.mute?.();
-      } else {
-        ytPlayerRef.current.unMute?.();
+    if (isMuted || volume === 0) {
+      const restored = previousVolumeRef.current > 0.05 ? previousVolumeRef.current : 0.85;
+      applyVolumeLevel(restored);
+    } else {
+      previousVolumeRef.current = volume;
+      setIsMuted(true);
+      isMutedRef.current = true;
+      if (audioRef.current) {
+        audioRef.current.muted = true;
       }
+    }
+  };
+
+  const updateVolumeFromClientY = useCallback(
+    (clientY: number) => {
+      const trackEl = volumeTrackRef.current;
+      if (!trackEl) return;
+      const rect = trackEl.getBoundingClientRect();
+      // Top of vertical bar = 1.0 (100%), Bottom = 0.0 (0%)
+      const ratio = 1 - (clientY - rect.top) / rect.height;
+      applyVolumeLevel(ratio);
+    },
+    [applyVolumeLevel]
+  );
+
+  const handleVolumePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    updateVolumeFromClientY(e.clientY);
+  };
+
+  const handleVolumePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+    e.stopPropagation();
+    updateVolumeFromClientY(e.clientY);
+  };
+
+  const handleVolumePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
     }
   };
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation();
+    const audio = audioRef.current;
+    if (!audio || duration <= 0) return;
+
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const ratio = Math.max(0, Math.min(1, clickX / rect.width));
+    const targetTime = ratio * duration;
 
-    if (usingFallbackAudio && fallbackAudioRef.current?.duration) {
-      const targetTime = ratio * fallbackAudioRef.current.duration;
-      fallbackAudioRef.current.currentTime = targetTime;
-      setProgress(ratio * 100);
-    } else if (ytPlayerRef.current && duration > 0) {
-      const targetTime = ratio * duration;
-      ytPlayerRef.current.seekTo?.(targetTime, true);
+    try {
+      audio.currentTime = targetTime;
       setCurrentTime(targetTime);
       setProgress(ratio * 100);
+    } catch {
+      // Ignore seek error before metadata ready
     }
   };
 
-  const handleFallbackTimeUpdate = () => {
-    if (fallbackAudioRef.current) {
-      const curr = fallbackAudioRef.current.currentTime;
-      const dur = fallbackAudioRef.current.duration;
-      setCurrentTime(curr);
-      if (dur > 0) {
-        setDuration(dur);
-        setProgress((curr / dur) * 100);
-      }
+  const handleTimeUpdate = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const curr = audio.currentTime || 0;
+    const dur =
+      audio.duration && isFinite(audio.duration) && audio.duration > 0
+        ? audio.duration
+        : duration;
+    setCurrentTime(curr);
+    if (dur > 0) {
+      setDuration(dur);
+      setProgress(Math.min(100, (curr / dur) * 100));
     }
   };
 
@@ -447,21 +418,19 @@ export const MusicPlayer: React.FC = () => {
     return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
+  const effectiveVolume = isMuted ? 0 : volume;
+  const volumePercent = Math.round(effectiveVolume * 100);
+
   return (
     <div className="fixed bottom-6 right-6 z-[100]">
-      {/* Hidden YouTube player container */}
-      <div
-        className="pointer-events-none fixed -bottom-10 -right-10 h-px w-px overflow-hidden opacity-0"
-        aria-hidden="true"
-      >
-        <div ref={ytContainerRef} />
-      </div>
-
-      {/* Fallback HTML5 Audio */}
+      {/* Direct Ad-Free HTML5 Audio Element */}
       <audio
-        ref={fallbackAudioRef}
-        crossOrigin="anonymous"
-        onTimeUpdate={handleFallbackTimeUpdate}
+        ref={audioRef}
+        playsInline
+        preload="auto"
+        onTimeUpdate={handleTimeUpdate}
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
         onEnded={() => nextTrack()}
       />
 
@@ -471,23 +440,12 @@ export const MusicPlayer: React.FC = () => {
           className="w-12 h-12 rounded-full bg-black/85 backdrop-blur-xl border border-white/15 flex items-center justify-center text-white shadow-2xl hover:scale-105 transition-transform group relative"
           title={`${currentTrack.title} - ${currentTrack.artist}`}
         >
-          {isPlaying && !isMuted ? (
-            <AudioEqualizer
-              isPlaying={isPlaying}
-              isMuted={isMuted}
-              audioElement={usingFallbackAudio ? fallbackAudioRef.current : null}
-              currentTime={currentTime}
-              trackSeed={currentTrackIndex}
-              variant="mini"
-            />
-          ) : (
-            <Disc3
-              className={`w-5 h-5 ${
-                isPlaying ? 'text-emerald-400 animate-spin' : 'text-zinc-400'
-              }`}
-              style={{ animationDuration: '4s' }}
-            />
-          )}
+          <Disc3
+            className={`w-5 h-5 ${
+              isPlaying ? 'text-emerald-400 animate-spin' : 'text-zinc-400'
+            }`}
+            style={{ animationDuration: '4s' }}
+          />
           {isPlaying && (
             <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full animate-ping" />
           )}
@@ -496,7 +454,7 @@ export const MusicPlayer: React.FC = () => {
           )}
         </button>
       ) : (
-        <div className="bg-black/85 backdrop-blur-xl border border-white/15 rounded-2xl p-3.5 shadow-2xl flex flex-col gap-2.5 w-76 transition-all">
+        <div className="bg-black/85 backdrop-blur-xl border border-white/15 rounded-2xl p-3.5 shadow-2xl flex flex-col gap-2.5 w-72 transition-all relative">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5 overflow-hidden">
               <div
@@ -548,7 +506,9 @@ export const MusicPlayer: React.FC = () => {
               <button
                 onClick={() => setShowPlaylist((prev) => !prev)}
                 className={`w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors ${
-                  showPlaylist ? 'text-emerald-400 bg-white/10' : 'text-zinc-400 hover:text-white'
+                  showPlaylist
+                    ? 'text-emerald-400 bg-white/10'
+                    : 'text-zinc-400 hover:text-white'
                 }`}
                 title="Daftar Lagu"
               >
@@ -563,15 +523,6 @@ export const MusicPlayer: React.FC = () => {
               </button>
             </div>
           </div>
-
-          {/* Dynamic Amplitude-Reactive Visual Equalizer */}
-          <AudioEqualizer
-            isPlaying={isPlaying}
-            isMuted={isMuted}
-            audioElement={usingFallbackAudio ? fallbackAudioRef.current : null}
-            currentTime={currentTime}
-            trackSeed={currentTrackIndex}
-          />
 
           {/* Interactive Progress Bar */}
           <div className="flex flex-col gap-1">
@@ -592,17 +543,81 @@ export const MusicPlayer: React.FC = () => {
                     Ketuk layar untuk memutar
                   </span>
                 )}
-                <button
-                  onClick={toggleMute}
-                  className="hover:text-white transition-colors"
-                  title={isMuted ? 'Bunyikan' : 'Bisukan'}
+
+                {/* Vertical Volume Slider Trigger & Popover */}
+                <div
+                  ref={volumePopoverRef}
+                  className="relative flex items-center"
+                  onMouseEnter={() => setShowVolumeSlider(true)}
+                  onMouseLeave={() => setShowVolumeSlider(false)}
                 >
-                  {isMuted ? (
-                    <VolumeX className="w-3 h-3 text-rose-400" />
-                  ) : (
-                    <Volume2 className="w-3 h-3" />
+                  {showVolumeSlider && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute bottom-full left-1/2 -translate-x-1/2 pb-2 z-30"
+                    >
+                      <div className="bg-zinc-900/95 backdrop-blur-xl border border-white/15 rounded-xl px-2.5 py-3 shadow-2xl flex flex-col items-center gap-2 w-10">
+                        <span className="text-[9px] font-semibold text-zinc-300 tabular-nums select-none">
+                          {volumePercent}%
+                        </span>
+
+                        {/* Vertical Slider Track */}
+                        <div
+                          ref={volumeTrackRef}
+                          onPointerDown={handleVolumePointerDown}
+                          onPointerMove={handleVolumePointerMove}
+                          onPointerUp={handleVolumePointerUp}
+                          onPointerCancel={handleVolumePointerUp}
+                          className="h-24 w-4 flex items-center justify-center cursor-pointer touch-none select-none py-0.5"
+                          title={`Volume: ${volumePercent}%`}
+                        >
+                          <div className="relative h-full w-1.5 bg-white/15 rounded-full overflow-visible">
+                            <div
+                              className="absolute bottom-0 left-0 right-0 bg-emerald-400 rounded-full transition-[height] duration-75"
+                              style={{ height: `${volumePercent}%` }}
+                            />
+                            <div
+                              className="absolute left-1/2 -translate-x-1/2 translate-y-1/2 w-3 h-3 rounded-full bg-white border-2 border-emerald-500 shadow transition-[bottom] duration-75"
+                              style={{ bottom: `${volumePercent}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={toggleMute}
+                          className="text-zinc-400 hover:text-white transition-colors pt-0.5"
+                          title={effectiveVolume === 0 ? 'Bunyikan' : 'Bisukan'}
+                        >
+                          {effectiveVolume === 0 ? (
+                            <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                          ) : (
+                            <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
                   )}
-                </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowVolumeSlider((prev) => !prev);
+                    }}
+                    className={`hover:text-white transition-colors flex items-center gap-1 px-1 py-0.5 rounded ${
+                      showVolumeSlider ? 'text-emerald-400 bg-white/10' : ''
+                    }`}
+                    title={`Atur Volume (${volumePercent}%)`}
+                  >
+                    {effectiveVolume === 0 ? (
+                      <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                    ) : (
+                      <Volume2 className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+
                 <span>{formatTime(duration)}</span>
               </div>
             </div>
@@ -615,7 +630,7 @@ export const MusicPlayer: React.FC = () => {
                 const active = idx === currentTrackIndex;
                 return (
                   <button
-                    key={track.videoId}
+                    key={track.id}
                     onClick={() => switchTrack(idx)}
                     className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between transition-colors ${
                       active
@@ -627,19 +642,9 @@ export const MusicPlayer: React.FC = () => {
                       {idx + 1}. {track.title} — {track.artist}
                     </span>
                     {active && isPlaying && (
-                      <div className="flex items-center gap-1.5 ml-2 shrink-0">
-                        <AudioEqualizer
-                          isPlaying={isPlaying}
-                          isMuted={isMuted}
-                          audioElement={usingFallbackAudio ? fallbackAudioRef.current : null}
-                          currentTime={currentTime}
-                          trackSeed={currentTrackIndex}
-                          variant="mini"
-                        />
-                        <span className="text-[10px] text-emerald-400">
-                          Diputar
-                        </span>
-                      </div>
+                      <span className="text-[10px] text-emerald-400 ml-2 shrink-0">
+                        Diputar
+                      </span>
                     )}
                   </button>
                 );
@@ -653,4 +658,3 @@ export const MusicPlayer: React.FC = () => {
 };
 
 export default MusicPlayer;
-

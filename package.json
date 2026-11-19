@@ -21,6 +21,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "firebase": "^12.18.0",
+    "hls.js": "^1.7.4",
     "html2canvas": "^1.4.1",
     "lucide-react": "^0.546.0",
     "motion": "^13.1.1",

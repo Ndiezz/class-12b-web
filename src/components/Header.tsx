@@ -44,11 +44,11 @@ export default function Header() {
         </div>
 
         <nav className="hidden lg:flex gap-4 xl:gap-6 font-bold uppercase text-sm tracking-wide">
-          <a href="#roster" className="hover:underline underline-offset-4">Roster</a>
-          <a href="#board" className="hover:underline underline-offset-4">Board</a>
-          <a href="#gallery" className="hover:underline underline-offset-4">Gallery</a>
-          <a href="#timetable" className="hover:underline underline-offset-4">Timetable</a>
-          <a href="#polls" className="hover:underline underline-offset-4">Polls</a>
+          <a href="#roster" className="hover:underline underline-offset-4">Anggota</a>
+          <a href="#board" className="hover:underline underline-offset-4">Confession Board</a>
+          <a href="#gallery" className="hover:underline underline-offset-4">Kenangan Kita</a>
+          <a href="#timetable" className="hover:underline underline-offset-4">Jadwal Pelajaran</a>
+          <a href="#polls" className="hover:underline underline-offset-4">Polls & Voting</a>
         </nav>
 
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">

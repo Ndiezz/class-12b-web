@@ -42,62 +42,13 @@ const formatSeconds = (sec: number) => {
   return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
 };
 
-const videoIdCache = new Map<string, string>();
-
-async function resolveYouTubeVideoId(title: string, artist: string): Promise<string | null> {
-  const cacheKey = `${title} - ${artist}`.toLowerCase();
-  if (videoIdCache.has(cacheKey)) {
-    return videoIdCache.get(cacheKey)!;
-  }
-
-  const query = `${title} ${artist}`;
-
-  // 1. Try Vite server middleware endpoint first
-  try {
-    const base = import.meta.env.BASE_URL || "/";
-    const apiPath = `${base.endsWith("/") ? base : base + "/"}api/yt-search?q=${encodeURIComponent(query)}`;
-    const res = await fetch(apiPath);
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.videoId) {
-        videoIdCache.set(cacheKey, data.videoId);
-        return data.videoId;
-      }
-    }
-  } catch {
-    // Fall through to public Piped APIs
-  }
-
-  // 2. Fallback to public Piped API instances for static/production builds
-  const pipedInstances = [
-    "https://pipedapi.kavin.rocks",
-    "https://pipedapi.tokhmi.xyz",
-    "https://pipedapi.moomoo.me",
-  ];
-
-  for (const instance of pipedInstances) {
-    try {
-      const res = await fetch(
-        `${instance}/search?q=${encodeURIComponent(query + " official audio")}&filter=music_songs`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const firstUrl: string | undefined = data?.items?.[0]?.url;
-        if (firstUrl) {
-          const match = firstUrl.match(/v=([a-zA-Z0-9_-]{11})/);
-          if (match?.[1]) {
-            videoIdCache.set(cacheKey, match[1]);
-            return match[1];
-          }
-        }
-      }
-    } catch {
-      // Try next instance
-    }
-  }
-
-  return null;
-}
+import {
+  resolveSongStream,
+  preloadSongStream,
+  playResolvedStream,
+  detachAudioStream,
+  unlockAudioOnGesture,
+} from "@/src/lib/audioStream";
 
 export default function ConfessionBoard() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -105,29 +56,17 @@ export default function ConfessionBoard() {
   const { isAdmin } = useRole();
   const [selectedNote, setSelectedNote] = useState<Message | null>(null);
 
-  // Shared YouTube IFrame Player for Note & Preview full-song playback
-  const noteYtContainerRef = useRef<HTMLDivElement | null>(null);
-  const noteYtPlayerRef = useRef<any>(null);
-  const noteYtReadyRef = useRef(false);
-  const activeModeRef = useRef<"none" | "preview" | "note">("none");
-  const pendingActionRef = useRef<(() => void) | null>(null);
-
-  // Audio playback state for opened Note modal
+  // Direct HTML5 Audio playback state for opened Note modal
   const noteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const noteStreamCleanupRef = useRef<(() => void) | null>(null);
   const [isNoteSongPlaying, setIsNoteSongPlaying] = useState(false);
   const [isLoadingNoteSong, setIsLoadingNoteSong] = useState(false);
   const [noteSongCurrentTime, setNoteSongCurrentTime] = useState(0);
   const [noteSongDuration, setNoteSongDuration] = useState(180);
-  const [usingNoteYt, setUsingNoteYt] = useState(false);
-
-  // Smooth progress interpolation refs
-  const lastPolledTimeRef = useRef<{ mediaTime: number; perfTime: number }>({
-    mediaTime: 0,
-    perfTime: 0,
-  });
 
   // Audio preview state inside "Attach Song" modal (for setting full-song start time)
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const previewStreamCleanupRef = useRef<(() => void) | null>(null);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [isResolvingVideo, setIsResolvingVideo] = useState(false);
   const [previewDuration, setPreviewDuration] = useState(210);
@@ -137,112 +76,6 @@ export default function ConfessionBoard() {
   useEffect(() => {
     draftSongRef.current = draftSong;
   }, [draftSong]);
-
-  // Initialize hidden YouTube Player for ConfessionBoard full-song playback
-  useEffect(() => {
-    let isMounted = true;
-
-    const initYtPlayer = () => {
-      if (!isMounted || !noteYtContainerRef.current || !window.YT?.Player) return;
-      if (noteYtPlayerRef.current) return;
-
-      noteYtPlayerRef.current = new window.YT.Player(noteYtContainerRef.current, {
-        height: "1",
-        width: "1",
-        videoId: "",
-        playerVars: {
-          autoplay: 0,
-          controls: 0,
-          disablekb: 1,
-          fs: 0,
-          iv_load_policy: 3,
-          modestbranding: 1,
-          playsinline: 1,
-          rel: 0,
-        },
-        events: {
-          onReady: () => {
-            if (!isMounted) return;
-            noteYtReadyRef.current = true;
-            if (pendingActionRef.current) {
-              const fn = pendingActionRef.current;
-              pendingActionRef.current = null;
-              fn();
-            }
-          },
-          onStateChange: (event: any) => {
-            if (!isMounted) return;
-            const YTState = window.YT?.PlayerState;
-            if (!YTState) return;
-
-            const mode = activeModeRef.current;
-            if (mode === "note") {
-              if (event.data === YTState.PLAYING) {
-                setIsNoteSongPlaying(true);
-                setIsLoadingNoteSong(false);
-                const dur = event.target.getDuration?.() || 0;
-                if (dur > 0) setNoteSongDuration(dur);
-                const curr = event.target.getCurrentTime?.() || 0;
-                lastPolledTimeRef.current = {
-                  mediaTime: curr,
-                  perfTime: performance.now(),
-                };
-              } else if (event.data === YTState.PAUSED) {
-                setIsNoteSongPlaying(false);
-              } else if (event.data === YTState.BUFFERING) {
-                setIsLoadingNoteSong(true);
-              } else if (event.data === YTState.ENDED) {
-                const startSec = selectedNote?.song?.startTime ?? 0;
-                event.target.seekTo?.(startSec, true);
-                event.target.playVideo?.();
-              }
-            } else if (mode === "preview") {
-              if (event.data === YTState.PLAYING) {
-                setIsPreviewPlaying(true);
-                const dur = event.target.getDuration?.() || 0;
-                if (dur > 0) {
-                  setPreviewDuration(dur);
-                  setDraftSong((prev) => (prev ? { ...prev, duration: Math.round(dur) } : prev));
-                }
-              } else if (event.data === YTState.PAUSED || event.data === YTState.ENDED) {
-                setIsPreviewPlaying(false);
-              }
-            }
-          },
-        },
-      });
-    };
-
-    if (window.YT && window.YT.Player) {
-      initYtPlayer();
-    } else {
-      const existingScript = document.querySelector(
-        'script[src="https://www.youtube.com/iframe_api"]'
-      );
-      if (!existingScript) {
-        const tag = document.createElement("script");
-        tag.src = "https://www.youtube.com/iframe_api";
-        tag.async = true;
-        document.head.appendChild(tag);
-      }
-      const prevCallback = window.onYouTubeIframeAPIReady;
-      window.onYouTubeIframeAPIReady = () => {
-        if (typeof prevCallback === "function") prevCallback();
-        initYtPlayer();
-      };
-    }
-
-    return () => {
-      isMounted = false;
-      if (noteYtPlayerRef.current && typeof noteYtPlayerRef.current.destroy === "function") {
-        try {
-          noteYtPlayerRef.current.destroy();
-        } catch {}
-        noteYtPlayerRef.current = null;
-        noteYtReadyRef.current = false;
-      }
-    };
-  }, []);
 
   // Rate Limiting Logic
   const canPost = () => {
@@ -304,7 +137,14 @@ export default function ConfessionBoard() {
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "messages"), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Message));
-      setMessages(data.sort((a, b) => b.createdAt - a.createdAt));
+      const sorted = data.sort((a, b) => b.createdAt - a.createdAt);
+      setMessages(sorted);
+      // Pre-resolve direct audio streams in background so tapping a Note on mobile plays instantly
+      sorted.slice(0, 18).forEach((m) => {
+        if (m.song?.title) {
+          preloadSongStream(m.song.title, m.song.artist, m.song.previewUrl, m.song.duration);
+        }
+      });
     });
     return unsub;
   }, []);
@@ -319,15 +159,14 @@ export default function ConfessionBoard() {
 
   // Stop preview audio when closing the song attachment modal
   const stopPreviewAudio = () => {
+    if (previewStreamCleanupRef.current) {
+      previewStreamCleanupRef.current();
+      previewStreamCleanupRef.current = null;
+    }
     if (previewAudioRef.current) {
       previewAudioRef.current.pause();
-      previewAudioRef.current.src = "";
-    }
-    if (activeModeRef.current === "preview" && noteYtPlayerRef.current) {
-      try {
-        noteYtPlayerRef.current.pauseVideo?.();
-      } catch {}
-      activeModeRef.current = "none";
+      detachAudioStream(previewAudioRef.current);
+      previewAudioRef.current.removeAttribute("src");
     }
     if (isPreviewPlaying) {
       setIsPreviewPlaying(false);
@@ -350,364 +189,253 @@ export default function ConfessionBoard() {
     setShowSongModal(true);
   };
 
-  // Play or pause the selected song from startTime inside Attach Song modal (using full YouTube track)
+  // Play or pause the selected song from startTime inside Attach Song modal using direct HTML5 Audio
   const togglePreviewPlay = async (songToPlay?: AttachedSong) => {
     const target = songToPlay || draftSongRef.current;
     if (!target) return;
 
+    const audio = previewAudioRef.current;
+    if (!audio) return;
+
     if (isPreviewPlaying && !songToPlay) {
-      if (activeModeRef.current === "preview" && noteYtPlayerRef.current) {
-        try {
-          noteYtPlayerRef.current.pauseVideo?.();
-        } catch {}
-      }
-      if (previewAudioRef.current) {
-        previewAudioRef.current.pause();
-      }
+      audio.pause();
       setIsPreviewPlaying(false);
       window.dispatchEvent(new CustomEvent("note-audio-stop"));
       return;
     }
 
+    // Unlock audio element synchronously inside tap gesture
+    unlockAudioOnGesture(audio);
     window.dispatchEvent(new CustomEvent("note-audio-start"));
     const startSec = target.startTime ?? 0;
 
-    let videoId = target.videoId;
-    if (!videoId) {
-      setIsResolvingVideo(true);
-      videoId = (await resolveYouTubeVideoId(target.title, target.artist)) || undefined;
-      setIsResolvingVideo(false);
-      if (videoId) {
-        setDraftSong((prev) =>
-          prev && prev.title === target.title ? { ...prev, videoId } : prev
-        );
-      }
-    }
+    setIsResolvingVideo(true);
+    const stream = await resolveSongStream(
+      target.title,
+      target.artist,
+      target.previewUrl,
+      target.duration
+    );
+    setIsResolvingVideo(false);
 
-    if (videoId && noteYtPlayerRef.current && noteYtReadyRef.current) {
-      if (previewAudioRef.current) {
-        previewAudioRef.current.pause();
-      }
-      activeModeRef.current = "preview";
-      try {
-        noteYtPlayerRef.current.unMute?.();
-        noteYtPlayerRef.current.setVolume?.(90);
-        noteYtPlayerRef.current.loadVideoById({
-          videoId,
-          startSeconds: startSec,
-        });
-        noteYtPlayerRef.current.playVideo?.();
-        setIsPreviewPlaying(true);
-        return;
-      } catch {
-        // Fall back to previewUrl if YouTube player fails
-      }
-    }
-
-    // Fallback to iTunes previewUrl if YouTube videoId could not be resolved
-    if (!target.previewUrl) {
+    if (!stream) {
       toast.error("Pratinjau audio tidak tersedia untuk lagu ini");
       return;
     }
 
-    if (!previewAudioRef.current) {
-      previewAudioRef.current = new Audio();
-      previewAudioRef.current.addEventListener("ended", () => {
-        setIsPreviewPlaying(false);
-        window.dispatchEvent(new CustomEvent("note-audio-stop"));
-      });
+    if (previewStreamCleanupRef.current) {
+      previewStreamCleanupRef.current();
+      previewStreamCleanupRef.current = null;
     }
 
-    const audio = previewAudioRef.current;
-    if (audio.src !== target.previewUrl) {
-      audio.src = target.previewUrl;
-    }
-    audio.currentTime = Math.min(startSec, 25);
-    audio.volume = 0.9;
-    audio
-      .play()
-      .then(() => {
-        setIsPreviewPlaying(true);
-      })
-      .catch(() => {
+    previewStreamCleanupRef.current = playResolvedStream({
+      audio,
+      stream,
+      startTime: startSec,
+      volume: 0.9,
+      autoPlay: true,
+      onReady: (dur, isFull) => {
+        if (dur > 0 && isFull) {
+          setPreviewDuration(dur);
+          setDraftSong((prev) =>
+            prev && prev.title === target.title
+              ? { ...prev, duration: Math.round(dur) }
+              : prev
+          );
+        }
+      },
+      onPlayStateChange: (playing) => {
+        setIsPreviewPlaying(playing);
+      },
+      onError: () => {
         setIsPreviewPlaying(false);
-      });
+      },
+    });
   };
 
-  // Auto-stop preview after 30 seconds in Attach Song modal (Instagram Note style)
+  // Auto-loop preview after 30 seconds in Attach Song modal (Instagram Note style)
   useEffect(() => {
-    if (!isPreviewPlaying || activeModeRef.current !== "preview") return;
+    if (!isPreviewPlaying) return;
     const interval = setInterval(() => {
-      const player = noteYtPlayerRef.current;
+      const audio = previewAudioRef.current;
       const currentDraft = draftSongRef.current;
-      if (player && typeof player.getCurrentTime === "function" && currentDraft) {
-        const curr = player.getCurrentTime() || 0;
-        const startSec = currentDraft.startTime ?? 0;
-        if (curr >= startSec + CLIP_DURATION) {
-          player.seekTo?.(startSec, true);
+      if (audio && currentDraft) {
+        const curr = audio.currentTime || 0;
+        const dur = audio.duration || previewDuration || 210;
+        const startSec = Math.min(currentDraft.startTime ?? 0, Math.max(0, dur - 2));
+        if (curr >= startSec + CLIP_DURATION || (dur > 0 && curr >= dur - 0.3)) {
+          try {
+            audio.currentTime = startSec;
+          } catch {}
         }
       }
-    }, 300);
+    }, 250);
     return () => clearInterval(interval);
-  }, [isPreviewPlaying]);
+  }, [isPreviewPlaying, previewDuration]);
 
   const handleDraftStartTimeChange = (newStart: number) => {
     if (!draftSong) return;
     const updated = { ...draftSong, startTime: newStart };
     setDraftSong(updated);
 
-    if (activeModeRef.current === "preview" && noteYtPlayerRef.current && isPreviewPlaying) {
+    const audio = previewAudioRef.current;
+    if (audio && isPreviewPlaying) {
+      const dur = audio.duration && isFinite(audio.duration) ? audio.duration : previewDuration;
+      const safeStart = Math.min(newStart, Math.max(0, dur - 2));
       try {
-        noteYtPlayerRef.current.seekTo?.(newStart, true);
+        audio.currentTime = safeStart;
       } catch {}
-    } else if (previewAudioRef.current && isPreviewPlaying) {
-      previewAudioRef.current.currentTime = Math.min(newStart, 25);
     }
+  };
+
+  const handleOpenNote = (msg: Message) => {
+    if (msg.song && noteAudioRef.current) {
+      // Unlock HTML5 Audio synchronously inside the user's tap gesture on mobile
+      unlockAudioOnGesture(noteAudioRef.current);
+      window.dispatchEvent(new CustomEvent("note-audio-start"));
+    }
+    setSelectedNote(msg);
   };
 
   // Auto-play 30-second song clip from startTime when a Note with a song is opened
   useEffect(() => {
     if (!selectedNote || !selectedNote.song) {
+      if (noteStreamCleanupRef.current) {
+        noteStreamCleanupRef.current();
+        noteStreamCleanupRef.current = null;
+      }
       if (noteAudioRef.current) {
         noteAudioRef.current.pause();
-        noteAudioRef.current.src = "";
-      }
-      if (activeModeRef.current === "note" && noteYtPlayerRef.current) {
-        try {
-          noteYtPlayerRef.current.pauseVideo?.();
-        } catch {}
-        activeModeRef.current = "none";
+        detachAudioStream(noteAudioRef.current);
+        noteAudioRef.current.removeAttribute("src");
       }
       setIsNoteSongPlaying(false);
       setIsLoadingNoteSong(false);
       setNoteSongCurrentTime(0);
-      setUsingNoteYt(false);
       return;
     }
 
     let cancelled = false;
     const song = selectedNote.song;
     const clipStart = song.startTime ?? 0;
-    const initialFullDur = song.duration && song.duration > 30 ? song.duration : Math.max(180, clipStart + CLIP_DURATION);
+    const initialFullDur =
+      song.duration && song.duration > 30 ? song.duration : Math.max(180, clipStart + CLIP_DURATION);
 
-    // Pause background web music immediately
     window.dispatchEvent(new CustomEvent("note-audio-start"));
     setIsLoadingNoteSong(true);
     setNoteSongDuration(initialFullDur);
     setNoteSongCurrentTime(clipStart);
-    lastPolledTimeRef.current = {
-      mediaTime: clipStart,
-      perfTime: performance.now(),
-    };
 
     const startNoteAudio = async () => {
-      // 1. Resolve full song YouTube videoId (stored on note or resolved dynamically)
-      let videoId = song.videoId;
-      if (!videoId) {
-        videoId = (await resolveYouTubeVideoId(song.title, song.artist)) || undefined;
-      }
-
+      const stream = await resolveSongStream(
+        song.title,
+        song.artist,
+        song.previewUrl,
+        song.duration
+      );
       if (cancelled) return;
 
-      const playViaYouTube = (vid: string) => {
-        if (cancelled || !noteYtPlayerRef.current) return;
-        activeModeRef.current = "note";
-        setUsingNoteYt(true);
-        try {
-          noteYtPlayerRef.current.unMute?.();
-          noteYtPlayerRef.current.setVolume?.(90);
-          noteYtPlayerRef.current.loadVideoById({
-            videoId: vid,
-            startSeconds: clipStart,
-          });
-          noteYtPlayerRef.current.playVideo?.();
-        } catch {
-          // Will fallback if error
-        }
-      };
-
-      if (videoId) {
-        if (noteYtReadyRef.current && noteYtPlayerRef.current) {
-          playViaYouTube(videoId);
-          return;
-        } else {
-          pendingActionRef.current = () => playViaYouTube(videoId!);
-          return;
-        }
-      }
-
-      // 2. Fallback to HTML5 audio previewUrl if YouTube is unavailable
-      setUsingNoteYt(false);
-      let audioUrl = song.previewUrl;
-      if (!audioUrl) {
-        try {
-          const query = `${song.title} ${song.artist}`;
-          const res = await fetch(
-            `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=1`
-          );
-          const data = await res.json();
-          audioUrl = data?.results?.[0]?.previewUrl;
-        } catch (err) {
-          console.error(err);
-        }
-      }
-
-      if (cancelled) return;
-
-      if (!audioUrl) {
+      const audio = noteAudioRef.current;
+      if (!stream || !audio) {
         setIsLoadingNoteSong(false);
         return;
       }
 
-      if (!noteAudioRef.current) {
-        noteAudioRef.current = new Audio();
+      if (noteStreamCleanupRef.current) {
+        noteStreamCleanupRef.current();
+        noteStreamCleanupRef.current = null;
       }
 
-      const audio = noteAudioRef.current;
-      audio.pause();
-      audio.src = audioUrl;
-      audio.volume = 0.9;
+      const safeStart = stream.isFullTrack
+        ? clipStart
+        : Math.min(clipStart, Math.max(0, stream.duration - 2));
 
-      audio.onloadedmetadata = () => {
-        if (cancelled) return;
-        const dur = audio.duration && isFinite(audio.duration) ? audio.duration : 30;
-        setNoteSongDuration(dur);
-        const safeStart = Math.min(clipStart, Math.max(0, dur - 2));
-        audio.currentTime = safeStart;
-        setNoteSongCurrentTime(safeStart);
-        lastPolledTimeRef.current = {
-          mediaTime: safeStart,
-          perfTime: performance.now(),
-        };
-        setIsLoadingNoteSong(false);
-        audio
-          .play()
-          .then(() => {
-            if (!cancelled) setIsNoteSongPlaying(true);
-          })
-          .catch(() => {
-            if (!cancelled) setIsNoteSongPlaying(false);
-          });
-      };
-
-      audio.onended = () => {
-        if (!cancelled) {
-          const safeStart = Math.min(clipStart, Math.max(0, (audio.duration || 30) - 2));
-          audio.currentTime = safeStart;
-          setNoteSongCurrentTime(safeStart);
-          lastPolledTimeRef.current = {
-            mediaTime: safeStart,
-            perfTime: performance.now(),
-          };
-          audio.play().catch(() => setIsNoteSongPlaying(false));
-        }
-      };
-
-      audio.onerror = () => {
-        if (!cancelled) {
+      noteStreamCleanupRef.current = playResolvedStream({
+        audio,
+        stream,
+        startTime: safeStart,
+        volume: 0.9,
+        autoPlay: true,
+        onReady: (dur) => {
+          if (cancelled) return;
+          if (dur > 0) setNoteSongDuration(dur);
+          setIsLoadingNoteSong(false);
+        },
+        onPlayStateChange: (playing) => {
+          if (cancelled) return;
+          setIsNoteSongPlaying(playing);
+          if (playing) setIsLoadingNoteSong(false);
+        },
+        onError: () => {
+          if (cancelled) return;
           setIsLoadingNoteSong(false);
           setIsNoteSongPlaying(false);
-        }
-      };
-
-      audio.load();
+        },
+      });
     };
 
-    startNoteAudio();
+    void startNoteAudio();
 
     return () => {
       cancelled = true;
-      pendingActionRef.current = null;
+      if (noteStreamCleanupRef.current) {
+        noteStreamCleanupRef.current();
+        noteStreamCleanupRef.current = null;
+      }
       if (noteAudioRef.current) {
         noteAudioRef.current.pause();
-        noteAudioRef.current.src = "";
-      }
-      if (activeModeRef.current === "note" && noteYtPlayerRef.current) {
-        try {
-          noteYtPlayerRef.current.pauseVideo?.();
-        } catch {}
-        activeModeRef.current = "none";
+        detachAudioStream(noteAudioRef.current);
+        noteAudioRef.current.removeAttribute("src");
       }
       setIsNoteSongPlaying(false);
       setIsLoadingNoteSong(false);
-      setUsingNoteYt(false);
       // Resume background web music when note modal closes
       window.dispatchEvent(new CustomEvent("note-audio-stop"));
     };
   }, [selectedNote]);
 
-  // Smooth 50ms progress bar updater & 30-second Instagram Note loop enforcement
+  // Smooth 40ms progress bar updater & 30-second Instagram Note loop enforcement
   useEffect(() => {
     if (!selectedNote?.song || !isNoteSongPlaying) return;
 
     const clipStart = selectedNote.song.startTime ?? 0;
-    const clipEnd = Math.min(noteSongDuration, clipStart + CLIP_DURATION);
 
     const interval = setInterval(() => {
-      if (usingNoteYt && noteYtPlayerRef.current && typeof noteYtPlayerRef.current.getCurrentTime === "function") {
-        const rawCurr = noteYtPlayerRef.current.getCurrentTime() || 0;
-        const rawDur = noteYtPlayerRef.current.getDuration?.() || 0;
-        if (rawDur > 0 && Math.abs(rawDur - noteSongDuration) > 1) {
-          setNoteSongDuration(rawDur);
-        }
+      const audio = noteAudioRef.current;
+      if (!audio) return;
 
-        // Loop back to clipStart when 30-second snippet finishes
-        const effectiveEnd = rawDur > 0 ? Math.min(rawDur, clipStart + CLIP_DURATION) : clipEnd;
-        if (rawCurr >= effectiveEnd) {
-          noteYtPlayerRef.current.seekTo?.(clipStart, true);
-          lastPolledTimeRef.current = {
-            mediaTime: clipStart,
-            perfTime: performance.now(),
-          };
-          setNoteSongCurrentTime(clipStart);
-          return;
-        }
-
-        // Smooth interpolation between YouTube API time updates
-        if (Math.abs(rawCurr - lastPolledTimeRef.current.mediaTime) > 0.02) {
-          lastPolledTimeRef.current = {
-            mediaTime: rawCurr,
-            perfTime: performance.now(),
-          };
-          setNoteSongCurrentTime(rawCurr);
-        } else {
-          const elapsedSec = (performance.now() - lastPolledTimeRef.current.perfTime) / 1000;
-          const interpolated = Math.min(effectiveEnd, lastPolledTimeRef.current.mediaTime + elapsedSec);
-          setNoteSongCurrentTime(interpolated);
-        }
-      } else if (noteAudioRef.current) {
-        const curr = noteAudioRef.current.currentTime;
-        const dur = noteAudioRef.current.duration || 30;
-        const safeStart = Math.min(clipStart, Math.max(0, dur - 2));
-        const effectiveEnd = Math.min(dur, safeStart + CLIP_DURATION);
-        if (curr >= effectiveEnd) {
-          noteAudioRef.current.currentTime = safeStart;
-          setNoteSongCurrentTime(safeStart);
-        } else {
-          setNoteSongCurrentTime(curr);
-        }
+      const dur =
+        audio.duration && isFinite(audio.duration) && audio.duration > 0
+          ? audio.duration
+          : noteSongDuration;
+      if (dur > 0 && Math.abs(dur - noteSongDuration) > 1) {
+        setNoteSongDuration(dur);
       }
-    }, 50);
+
+      const safeStart = dur > 35 ? clipStart : Math.min(clipStart, Math.max(0, dur - 2));
+      const effectiveEnd = Math.min(dur, safeStart + CLIP_DURATION);
+      const curr = audio.currentTime || 0;
+
+      if (curr >= effectiveEnd || (dur > 0 && curr >= dur - 0.25)) {
+        try {
+          audio.currentTime = safeStart;
+        } catch {}
+        setNoteSongCurrentTime(safeStart);
+        if (audio.paused) {
+          audio.play().catch(() => {});
+        }
+      } else {
+        setNoteSongCurrentTime(curr);
+      }
+    }, 40);
 
     return () => clearInterval(interval);
-  }, [selectedNote, isNoteSongPlaying, usingNoteYt, noteSongDuration]);
+  }, [selectedNote, isNoteSongPlaying, noteSongDuration]);
 
   const toggleNoteSongPlay = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (usingNoteYt && noteYtPlayerRef.current) {
-      if (isNoteSongPlaying) {
-        noteYtPlayerRef.current.pauseVideo?.();
-        setIsNoteSongPlaying(false);
-      } else {
-        window.dispatchEvent(new CustomEvent("note-audio-start"));
-        noteYtPlayerRef.current.playVideo?.();
-        setIsNoteSongPlaying(true);
-      }
-      return;
-    }
-
     const audio = noteAudioRef.current;
-    if (!audio || !audio.src) return;
+    if (!audio) return;
 
     if (isNoteSongPlaying) {
       audio.pause();
@@ -724,25 +452,20 @@ export default function ConfessionBoard() {
   const replayNoteSongFromStart = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!selectedNote?.song) return;
-    const clipStart = selectedNote.song.startTime ?? 0;
-    window.dispatchEvent(new CustomEvent("note-audio-start"));
-
-    if (usingNoteYt && noteYtPlayerRef.current) {
-      noteYtPlayerRef.current.seekTo?.(clipStart, true);
-      noteYtPlayerRef.current.playVideo?.();
-      lastPolledTimeRef.current = {
-        mediaTime: clipStart,
-        perfTime: performance.now(),
-      };
-      setNoteSongCurrentTime(clipStart);
-      setIsNoteSongPlaying(true);
-      return;
-    }
-
     const audio = noteAudioRef.current;
-    if (!audio || !audio.src) return;
-    const safeStart = Math.min(clipStart, Math.max(0, (audio.duration || 30) - 2));
-    audio.currentTime = safeStart;
+    if (!audio) return;
+
+    const clipStart = selectedNote.song.startTime ?? 0;
+    const dur =
+      audio.duration && isFinite(audio.duration) && audio.duration > 0
+        ? audio.duration
+        : noteSongDuration;
+    const safeStart = dur > 35 ? clipStart : Math.min(clipStart, Math.max(0, dur - 2));
+
+    window.dispatchEvent(new CustomEvent("note-audio-start"));
+    try {
+      audio.currentTime = safeStart;
+    } catch {}
     setNoteSongCurrentTime(safeStart);
     audio
       .play()
@@ -753,30 +476,27 @@ export default function ConfessionBoard() {
   const handleNoteSongSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation();
     if (!selectedNote?.song) return;
+    const audio = noteAudioRef.current;
+    if (!audio || !noteSongDuration) return;
+
     const clipStart = selectedNote.song.startTime ?? 0;
+    const safeStart =
+      noteSongDuration > 35
+        ? clipStart
+        : Math.min(clipStart, Math.max(0, noteSongDuration - 2));
     const effectiveClipLen = Math.max(
       1,
-      Math.min(CLIP_DURATION, noteSongDuration - clipStart)
+      Math.min(CLIP_DURATION, noteSongDuration - safeStart)
     );
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const ratio = Math.max(0, Math.min(1, clickX / rect.width));
-    const targetTime = clipStart + ratio * effectiveClipLen;
+    const targetTime = Math.min(noteSongDuration, safeStart + ratio * effectiveClipLen);
 
-    if (usingNoteYt && noteYtPlayerRef.current) {
-      noteYtPlayerRef.current.seekTo?.(targetTime, true);
-      lastPolledTimeRef.current = {
-        mediaTime: targetTime,
-        perfTime: performance.now(),
-      };
+    try {
+      audio.currentTime = targetTime;
       setNoteSongCurrentTime(targetTime);
-      return;
-    }
-
-    const audio = noteAudioRef.current;
-    if (!audio || !noteSongDuration) return;
-    audio.currentTime = Math.min(targetTime, noteSongDuration);
-    setNoteSongCurrentTime(Math.min(targetTime, noteSongDuration));
+    } catch {}
   };
 
   const searchSong = async (e: React.FormEvent) => {
@@ -786,7 +506,18 @@ export default function ConfessionBoard() {
     try {
       const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(songSearch)}&entity=song&limit=5`);
       const data = await res.json();
-      setSongResults(data.results || []);
+      const results = data.results || [];
+      setSongResults(results);
+      results.slice(0, 3).forEach((s: any) => {
+        if (s.trackName) {
+          preloadSongStream(
+            s.trackName,
+            s.artistName || "",
+            s.previewUrl,
+            s.trackTimeMillis ? Math.round(s.trackTimeMillis / 1000) : 210
+          );
+        }
+      });
     } catch (err) {
       console.error(err);
     }
@@ -897,13 +628,9 @@ export default function ConfessionBoard() {
 
   return (
     <section id="board" className="w-full border-t-4 border-[#000] graph-paper-pink relative z-10">
-    {/* Hidden YouTube Player Container for Full-Song Note & Preview Playback */}
-    <div
-      className="pointer-events-none fixed -bottom-10 -left-10 h-px w-px overflow-hidden opacity-0"
-      aria-hidden="true"
-    >
-      <div ref={noteYtContainerRef} />
-    </div>
+    {/* Direct Ad-Free HTML5 Audio Elements for Note & Preview Playback */}
+    <audio ref={noteAudioRef} playsInline preload="auto" className="hidden" />
+    <audio ref={previewAudioRef} playsInline preload="auto" className="hidden" />
 
     <div className="p-4 sm:p-8 max-w-7xl mx-auto">
       <div className="mb-6 sm:mb-8">
@@ -1252,7 +979,7 @@ export default function ConfessionBoard() {
           return (
             <div 
               key={msg.id} 
-              onClick={() => setSelectedNote(msg)}
+              onClick={() => handleOpenNote(msg)}
               className={`p-2 sm:p-3 mb-2 sm:mb-4 relative group border sm:border-2 border-[#000] shadow-[2px_2px_0_0_#000] flex flex-col break-inside-avoid cursor-pointer hover:-translate-y-1 hover:shadow-[3px_3px_0_0_#000] transition-all ${bgClass}`}
             >
               {isAdmin && (

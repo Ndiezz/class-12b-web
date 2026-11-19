@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast from "react-hot-toast";
-import { collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from "firebase/firestore";
+import { collection, onSnapshot, addDoc, deleteDoc, doc, runTransaction } from "firebase/firestore";
 import { db } from "@/src/lib/firebase";
+import { getOrCreateClientId } from "@/src/lib/clientId";
 import { useRole } from "@/src/hooks/useRole";
 import { Poll } from "@/src/types";
 import { NeoCard } from "./ui/NeoCard";
 import { NeoButton } from "./ui/NeoButton";
-import { Trash2 } from "lucide-react";
+import { Trash2, Check } from "lucide-react";
 import { motion } from "motion/react";
 
 const PROGRESS_COLORS = [
@@ -25,6 +26,9 @@ export default function Polls() {
   const { isAdmin } = useRole();
   const [newPollQuestion, setNewPollQuestion] = useState("");
   const [newPollOptions, setNewPollOptions] = useState(["", ""]);
+  const [pendingPolls, setPendingPolls] = useState<Record<string, boolean>>({});
+  const pendingLocksRef = useRef<Set<string>>(new Set());
+  const clientId = getOrCreateClientId();
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "polls"), (snapshot) => {
@@ -47,6 +51,7 @@ export default function Polls() {
       await addDoc(collection(db, "polls"), {
         question: newPollQuestion,
         options: validOptions.map(text => ({ text, votes: 0 })),
+        voters: {},
         createdAt: Date.now()
       });
       toast.success("Poling berhasil dibuat!", { id: 'app-toast', duration: 3000 });
@@ -58,23 +63,119 @@ export default function Polls() {
     }
   };
 
-  const handleVote = async (poll: Poll, optionIndex: number) => {
-    // Check local storage to prevent multiple votes from same device
-    const votedKey = `voted_poll_${poll.id}`;
-    if (localStorage.getItem(votedKey)) {
-      toast.error("Kamu sudah memilih pada poling ini!", { id: 'app-toast', duration: 3000 });
-      return;
+  const getUserVotedIndex = (poll: Poll): number | null => {
+    if (poll.voters && typeof poll.voters[clientId] === "number") {
+      return poll.voters[clientId];
     }
+    if (poll.id) {
+      try {
+        const savedChoice = localStorage.getItem(`voted_poll_choice_${poll.id}`);
+        if (savedChoice !== null) {
+          const parsed = parseInt(savedChoice, 10);
+          if (!Number.isNaN(parsed)) return parsed;
+        }
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  };
+
+  const handleVote = async (poll: Poll, optionIndex: number) => {
+    if (!poll.id) return;
+
+    const lockKey = `vote_${poll.id}`;
+    if (pendingLocksRef.current.has(lockKey)) return;
+
+    pendingLocksRef.current.add(lockKey);
+    setPendingPolls(prev => ({ ...prev, [poll.id!]: true }));
+
+    const choiceStorageKey = `voted_poll_choice_${poll.id}`;
+    const legacyVotedKey = `voted_poll_${poll.id}`;
 
     try {
-      const newOptions = [...poll.options];
-      newOptions[optionIndex].votes += 1;
-      await updateDoc(doc(db, "polls", poll.id!), { options: newOptions });
-      localStorage.setItem(votedKey, "true");
-      toast.success("Suara berhasil diberikan!", { id: 'app-toast', duration: 3000 });
+      const pollRef = doc(db, "polls", poll.id);
+      let actionResult: "voted" | "switched" | "unvoted" = "voted";
+
+      await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(pollRef);
+        if (!snap.exists()) return;
+
+        const data = snap.data() as Poll;
+        const options = (data.options || []).map(opt => ({ ...opt }));
+        const voters: Record<string, number> = { ...(data.voters || {}) };
+
+        if (optionIndex < 0 || optionIndex >= options.length) return;
+
+        let previousIndex: number | undefined =
+          typeof voters[clientId] === "number" ? voters[clientId] : undefined;
+
+        if (previousIndex === undefined) {
+          try {
+            const savedChoice = localStorage.getItem(choiceStorageKey);
+            if (savedChoice !== null) {
+              const parsed = parseInt(savedChoice, 10);
+              if (!Number.isNaN(parsed) && parsed >= 0 && parsed < options.length && options[parsed].votes > 0) {
+                previousIndex = parsed;
+              }
+            }
+          } catch {
+            // ignore storage errors
+          }
+        }
+
+        if (previousIndex === optionIndex) {
+          options[optionIndex].votes = Math.max(0, options[optionIndex].votes - 1);
+          delete voters[clientId];
+          actionResult = "unvoted";
+        } else if (
+          typeof previousIndex === "number" &&
+          previousIndex >= 0 &&
+          previousIndex < options.length
+        ) {
+          options[previousIndex].votes = Math.max(0, options[previousIndex].votes - 1);
+          options[optionIndex].votes = (options[optionIndex].votes || 0) + 1;
+          voters[clientId] = optionIndex;
+          actionResult = "switched";
+        } else {
+          options[optionIndex].votes = (options[optionIndex].votes || 0) + 1;
+          voters[clientId] = optionIndex;
+          actionResult = "voted";
+        }
+
+        transaction.update(pollRef, {
+          options,
+          voters
+        });
+      });
+
+      try {
+        if (actionResult === "unvoted") {
+          localStorage.removeItem(choiceStorageKey);
+          localStorage.removeItem(legacyVotedKey);
+          toast.success("Pilihan suara dibatalkan!", { id: "app-toast", duration: 2500 });
+        } else if (actionResult === "switched") {
+          localStorage.setItem(choiceStorageKey, optionIndex.toString());
+          localStorage.setItem(legacyVotedKey, "true");
+          toast.success("Pilihan suara berhasil diganti!", { id: "app-toast", duration: 2500 });
+        } else {
+          localStorage.setItem(choiceStorageKey, optionIndex.toString());
+          localStorage.setItem(legacyVotedKey, "true");
+          toast.success("Suara berhasil diberikan!", { id: "app-toast", duration: 2500 });
+        }
+      } catch {
+        // ignore storage errors
+      }
     } catch (err) {
       console.error(err);
       toast.error("Gagal memberikan suara!", { id: 'app-toast', duration: 3000 });
+    } finally {
+      pendingLocksRef.current.delete(lockKey);
+      setPendingPolls(prev => {
+        const next = { ...prev };
+        delete next[poll.id!];
+        return next;
+      });
     }
   };
 
@@ -133,6 +234,9 @@ export default function Polls() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8">
         {polls.map((poll) => {
           const totalVotes = poll.options.reduce((sum, opt) => sum + opt.votes, 0);
+          const userVotedIndex = getUserVotedIndex(poll);
+          const isPollPending = !!(poll.id && pendingPolls[poll.id]);
+
           return (
             <NeoCard key={poll.id} color="white" className="p-4 sm:p-6 relative group">
               {isAdmin && (
@@ -145,28 +249,50 @@ export default function Polls() {
                 {poll.options.map((opt, i) => {
                   const percentage = totalVotes === 0 ? 0 : Math.round((opt.votes / totalVotes) * 100);
                   const colorClass = PROGRESS_COLORS[i % PROGRESS_COLORS.length];
+                  const isSelected = userVotedIndex === i;
+
                   return (
                     <button 
-                      key={i} 
+                      key={i}
+                      type="button"
+                      disabled={isPollPending}
                       onClick={() => handleVote(poll, i)}
-                      className="relative w-full border-2 sm:border-4 border-black p-2 sm:p-3 text-left font-bold overflow-hidden group/btn hover:bg-gray-100 transition-colors text-xs sm:text-base"
+                      title={isSelected ? "Klik untuk batalkan pilihan" : userVotedIndex !== null ? "Klik untuk pindah pilihan ke opsi ini" : "Klik untuk memilih opsi ini"}
+                      className={`relative w-full border-2 sm:border-4 border-black p-2 sm:p-3 text-left font-bold overflow-hidden group/btn transition-all text-xs sm:text-base ${
+                        isSelected
+                          ? "shadow-[3px_3px_0_0_#000] -translate-y-0.5 bg-white"
+                          : "hover:bg-gray-100"
+                      } ${isPollPending ? "opacity-60 cursor-wait" : ""}`}
                     >
                       <motion.div 
                         initial={{ width: 0 }}
-                        whileInView={{ width: `${percentage}%` }}
-                        viewport={{ once: true }}
-                        transition={{ duration: 1, ease: "easeOut", delay: 0.2 }}
-                        className={`absolute top-0 left-0 h-full ${colorClass} progress-energy z-0 border-r-2 sm:border-r-4 border-black`} 
+                        animate={{ width: `${percentage}%` }}
+                        transition={{ duration: 0.45, ease: "easeOut" }}
+                        className={`absolute top-0 left-0 h-full ${colorClass} progress-energy z-0 ${percentage > 0 ? "border-r-2 sm:border-r-4 border-black" : ""}`} 
                       />
                       <div className="flex justify-between items-center relative z-10 gap-2">
-                        <span className="truncate">{opt.text}</span>
-                        <span className="shrink-0 text-xs sm:text-sm">{percentage}% ({opt.votes})</span>
+                        <span className="truncate flex items-center gap-1.5">
+                          {isSelected && (
+                            <span className="inline-flex items-center justify-center w-4 h-4 sm:w-5 sm:h-5 bg-black text-white rounded-full shrink-0">
+                              <Check size={12} strokeWidth={3} />
+                            </span>
+                          )}
+                          <span className="truncate">{opt.text}</span>
+                        </span>
+                        <span className="shrink-0 text-xs sm:text-sm tabular-nums">{percentage}% ({opt.votes})</span>
                       </div>
                     </button>
                   );
                 })}
               </div>
-              <p className="mt-3 sm:mt-4 text-xs sm:text-sm font-bold uppercase text-gray-500">Total Votes: {totalVotes}</p>
+              <div className="mt-3 sm:mt-4 flex items-center justify-between text-xs sm:text-sm font-bold uppercase text-gray-500 tabular-nums">
+                <span>Total Votes: {totalVotes}</span>
+                {userVotedIndex !== null && (
+                  <span className="text-[10px] sm:text-xs text-black bg-neo-yellow border border-black px-2 py-0.5 shadow-[1px_1px_0_0_#000]">
+                    Klik lagi untuk batal / ganti
+                  </span>
+                )}
+              </div>
             </NeoCard>
           );
         })}

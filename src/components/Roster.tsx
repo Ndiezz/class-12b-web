@@ -43,62 +43,13 @@ const formatSeconds = (sec: number) => {
   return `${mins}:${secs < 10 ? "0" : ""}${secs}`;
 };
 
-const rosterVideoIdCache = new Map<string, string>();
-
-async function resolveYouTubeVideoId(title: string, artist: string): Promise<string | null> {
-  const cacheKey = `${title} - ${artist}`.toLowerCase();
-  if (rosterVideoIdCache.has(cacheKey)) {
-    return rosterVideoIdCache.get(cacheKey)!;
-  }
-
-  const query = `${title} ${artist}`;
-
-  // 1. Try Vite server middleware endpoint first
-  try {
-    const base = import.meta.env.BASE_URL || "/";
-    const apiPath = `${base.endsWith("/") ? base : base + "/"}api/yt-search?q=${encodeURIComponent(query)}`;
-    const res = await fetch(apiPath);
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.videoId) {
-        rosterVideoIdCache.set(cacheKey, data.videoId);
-        return data.videoId;
-      }
-    }
-  } catch {
-    // Fall through to public Piped APIs
-  }
-
-  // 2. Fallback to public Piped API instances for static/production builds
-  const pipedInstances = [
-    "https://pipedapi.kavin.rocks",
-    "https://pipedapi.tokhmi.xyz",
-    "https://pipedapi.moomoo.me",
-  ];
-
-  for (const instance of pipedInstances) {
-    try {
-      const res = await fetch(
-        `${instance}/search?q=${encodeURIComponent(query + " official audio")}&filter=music_songs`
-      );
-      if (res.ok) {
-        const data = await res.json();
-        const firstUrl: string | undefined = data?.items?.[0]?.url;
-        if (firstUrl) {
-          const match = firstUrl.match(/v=([a-zA-Z0-9_-]{11})/);
-          if (match?.[1]) {
-            rosterVideoIdCache.set(cacheKey, match[1]);
-            return match[1];
-          }
-        }
-      }
-    } catch {
-      // Try next instance
-    }
-  }
-
-  return null;
-}
+import {
+  resolveSongStream,
+  preloadSongStream,
+  playResolvedStream,
+  detachAudioStream,
+  unlockAudioOnGesture,
+} from "@/src/lib/audioStream";
 
 const parseImageUrl = (url: string) => {
   if (!url) return "";
@@ -129,170 +80,53 @@ export default function Roster() {
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Shared YouTube IFrame Player for Student Profile & Song Configurator full-song playback
-  const rosterYtContainerRef = useRef<HTMLDivElement | null>(null);
-  const rosterYtPlayerRef = useRef<any>(null);
-  const rosterYtReadyRef = useRef(false);
-  const activeModeRef = useRef<"none" | "preview" | "student">("none");
-  const pendingActionRef = useRef<(() => void) | null>(null);
-
-  // Audio playback state for opened Student Profile modal
+  // Direct HTML5 Audio playback state for opened Student Profile modal
   const studentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const studentStreamCleanupRef = useRef<(() => void) | null>(null);
   const [isStudentSongPlaying, setIsStudentSongPlaying] = useState(false);
   const [isLoadingStudentSong, setIsLoadingStudentSong] = useState(false);
   const [studentSongCurrentTime, setStudentSongCurrentTime] = useState(0);
   const [studentSongDuration, setStudentSongDuration] = useState(180);
-  const [usingStudentYt, setUsingStudentYt] = useState(false);
-
-  // Smooth progress interpolation refs
-  const lastPolledTimeRef = useRef<{ mediaTime: number; perfTime: number }>({
-    mediaTime: 0,
-    perfTime: 0,
-  });
 
   // Audio preview state inside "Attach Song" modal (for setting full-song start time)
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+  const previewStreamCleanupRef = useRef<(() => void) | null>(null);
   const [isPreviewPlaying, setIsPreviewPlaying] = useState(false);
   const [isResolvingVideo, setIsResolvingVideo] = useState(false);
   const [previewDuration, setPreviewDuration] = useState(210);
   const [draftSong, setDraftSong] = useState<AttachedSong | null>(null);
   const draftSongRef = useRef<AttachedSong | null>(null);
-  const selectedStudentRef = useRef<Student | null>(null);
 
   useEffect(() => {
     draftSongRef.current = draftSong;
   }, [draftSong]);
 
   useEffect(() => {
-    selectedStudentRef.current = selectedStudent;
-  }, [selectedStudent]);
-
-  // Initialize hidden YouTube Player for Roster full-song playback
-  useEffect(() => {
-    let isMounted = true;
-
-    const initYtPlayer = () => {
-      if (!isMounted || !rosterYtContainerRef.current || !window.YT?.Player) return;
-      if (rosterYtPlayerRef.current) return;
-
-      rosterYtPlayerRef.current = new window.YT.Player(rosterYtContainerRef.current, {
-        height: "1",
-        width: "1",
-        videoId: "",
-        playerVars: {
-          autoplay: 0,
-          controls: 0,
-          disablekb: 1,
-          fs: 0,
-          iv_load_policy: 3,
-          modestbranding: 1,
-          playsinline: 1,
-          rel: 0,
-        },
-        events: {
-          onReady: () => {
-            if (!isMounted) return;
-            rosterYtReadyRef.current = true;
-            if (pendingActionRef.current) {
-              const fn = pendingActionRef.current;
-              pendingActionRef.current = null;
-              fn();
-            }
-          },
-          onStateChange: (event: any) => {
-            if (!isMounted) return;
-            const YTState = window.YT?.PlayerState;
-            if (!YTState) return;
-
-            const mode = activeModeRef.current;
-            if (mode === "student") {
-              if (event.data === YTState.PLAYING) {
-                setIsStudentSongPlaying(true);
-                setIsLoadingStudentSong(false);
-                const dur = event.target.getDuration?.() || 0;
-                if (dur > 0) setStudentSongDuration(dur);
-                const curr = event.target.getCurrentTime?.() || 0;
-                lastPolledTimeRef.current = {
-                  mediaTime: curr,
-                  perfTime: performance.now(),
-                };
-              } else if (event.data === YTState.PAUSED) {
-                setIsStudentSongPlaying(false);
-              } else if (event.data === YTState.BUFFERING) {
-                setIsLoadingStudentSong(true);
-              } else if (event.data === YTState.ENDED) {
-                const startSec = selectedStudentRef.current?.song?.startTime ?? 0;
-                event.target.seekTo?.(startSec, true);
-                event.target.playVideo?.();
-              }
-            } else if (mode === "preview") {
-              if (event.data === YTState.PLAYING) {
-                setIsPreviewPlaying(true);
-                const dur = event.target.getDuration?.() || 0;
-                if (dur > 0) {
-                  setPreviewDuration(dur);
-                  setDraftSong((prev) => (prev ? { ...prev, duration: Math.round(dur) } : prev));
-                }
-              } else if (event.data === YTState.PAUSED || event.data === YTState.ENDED) {
-                setIsPreviewPlaying(false);
-              }
-            }
-          },
-        },
-      });
-    };
-
-    if (window.YT && window.YT.Player) {
-      initYtPlayer();
-    } else {
-      const existingScript = document.querySelector(
-        'script[src="https://www.youtube.com/iframe_api"]'
-      );
-      if (!existingScript) {
-        const tag = document.createElement("script");
-        tag.src = "https://www.youtube.com/iframe_api";
-        tag.async = true;
-        document.head.appendChild(tag);
-      }
-      const prevCallback = window.onYouTubeIframeAPIReady;
-      window.onYouTubeIframeAPIReady = () => {
-        if (typeof prevCallback === "function") prevCallback();
-        initYtPlayer();
-      };
-    }
-
-    return () => {
-      isMounted = false;
-      if (rosterYtPlayerRef.current && typeof rosterYtPlayerRef.current.destroy === "function") {
-        try {
-          rosterYtPlayerRef.current.destroy();
-        } catch {}
-        rosterYtPlayerRef.current = null;
-        rosterYtReadyRef.current = false;
-      }
-    };
-  }, []);
-
-  useEffect(() => {
     const unsub = onSnapshot(collection(db, "students"), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Student));
-      setStudents(data.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())));
+      const sorted = data.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+      setStudents(sorted);
       setLoading(false);
+      // Pre-resolve direct audio streams in background so tapping a Student card on mobile plays instantly
+      sorted.forEach((s) => {
+        if (s.song?.title) {
+          preloadSongStream(s.song.title, s.song.artist, s.song.previewUrl, s.song.duration);
+        }
+      });
     });
     return unsub;
   }, []);
 
   // Stop preview audio when closing the song attachment modal
   const stopPreviewAudio = () => {
+    if (previewStreamCleanupRef.current) {
+      previewStreamCleanupRef.current();
+      previewStreamCleanupRef.current = null;
+    }
     if (previewAudioRef.current) {
       previewAudioRef.current.pause();
-      previewAudioRef.current.src = "";
-    }
-    if (activeModeRef.current === "preview" && rosterYtPlayerRef.current) {
-      try {
-        rosterYtPlayerRef.current.pauseVideo?.();
-      } catch {}
-      activeModeRef.current = "none";
+      detachAudioStream(previewAudioRef.current);
+      previewAudioRef.current.removeAttribute("src");
     }
     if (isPreviewPlaying) {
       setIsPreviewPlaying(false);
@@ -315,151 +149,129 @@ export default function Roster() {
     setShowSongModal(true);
   };
 
-  // Play or pause the selected song from startTime inside Attach Song modal (using full YouTube track)
+  // Play or pause the selected song from startTime inside Attach Song modal using direct HTML5 Audio
   const togglePreviewPlay = async (songToPlay?: AttachedSong) => {
     const target = songToPlay || draftSongRef.current;
     if (!target) return;
 
+    const audio = previewAudioRef.current;
+    if (!audio) return;
+
     if (isPreviewPlaying && !songToPlay) {
-      if (activeModeRef.current === "preview" && rosterYtPlayerRef.current) {
-        try {
-          rosterYtPlayerRef.current.pauseVideo?.();
-        } catch {}
-      }
-      if (previewAudioRef.current) {
-        previewAudioRef.current.pause();
-      }
+      audio.pause();
       setIsPreviewPlaying(false);
       window.dispatchEvent(new CustomEvent("note-audio-stop"));
       return;
     }
 
+    // Unlock audio element synchronously inside tap gesture
+    unlockAudioOnGesture(audio);
     window.dispatchEvent(new CustomEvent("note-audio-start"));
     const startSec = target.startTime ?? 0;
 
-    let videoId = target.videoId;
-    if (!videoId) {
-      setIsResolvingVideo(true);
-      videoId = (await resolveYouTubeVideoId(target.title, target.artist)) || undefined;
-      setIsResolvingVideo(false);
-      if (videoId) {
-        setDraftSong((prev) =>
-          prev && prev.title === target.title ? { ...prev, videoId } : prev
-        );
-      }
-    }
+    setIsResolvingVideo(true);
+    const stream = await resolveSongStream(
+      target.title,
+      target.artist,
+      target.previewUrl,
+      target.duration
+    );
+    setIsResolvingVideo(false);
 
-    if (videoId && rosterYtPlayerRef.current && rosterYtReadyRef.current) {
-      if (previewAudioRef.current) {
-        previewAudioRef.current.pause();
-      }
-      activeModeRef.current = "preview";
-      try {
-        rosterYtPlayerRef.current.unMute?.();
-        rosterYtPlayerRef.current.setVolume?.(90);
-        rosterYtPlayerRef.current.loadVideoById({
-          videoId,
-          startSeconds: startSec,
-        });
-        rosterYtPlayerRef.current.playVideo?.();
-        setIsPreviewPlaying(true);
-        return;
-      } catch {
-        // Fall back to previewUrl if YouTube player fails
-      }
-    }
-
-    // Fallback to iTunes previewUrl if YouTube videoId could not be resolved
-    let fallbackUrl = target.previewUrl;
-    if (!fallbackUrl) {
-      try {
-        const res = await fetch(
-          `https://itunes.apple.com/search?term=${encodeURIComponent(
-            `${target.title} ${target.artist}`
-          )}&entity=song&limit=1`
-        );
-        const data = await res.json();
-        fallbackUrl = data?.results?.[0]?.previewUrl;
-      } catch {}
-    }
-
-    if (!fallbackUrl) {
+    if (!stream) {
       toast.error("Pratinjau audio tidak tersedia untuk lagu ini");
       return;
     }
 
-    if (!previewAudioRef.current) {
-      previewAudioRef.current = new Audio();
-      previewAudioRef.current.addEventListener("ended", () => {
-        setIsPreviewPlaying(false);
-        window.dispatchEvent(new CustomEvent("note-audio-stop"));
-      });
+    if (previewStreamCleanupRef.current) {
+      previewStreamCleanupRef.current();
+      previewStreamCleanupRef.current = null;
     }
 
-    const audio = previewAudioRef.current;
-    if (audio.src !== fallbackUrl) {
-      audio.src = fallbackUrl;
-    }
-    audio.currentTime = Math.min(startSec, 25);
-    audio.volume = 0.9;
-    audio
-      .play()
-      .then(() => {
-        setIsPreviewPlaying(true);
-      })
-      .catch(() => {
+    previewStreamCleanupRef.current = playResolvedStream({
+      audio,
+      stream,
+      startTime: startSec,
+      volume: 0.9,
+      autoPlay: true,
+      onReady: (dur, isFull) => {
+        if (dur > 0 && isFull) {
+          setPreviewDuration(dur);
+          setDraftSong((prev) =>
+            prev && prev.title === target.title
+              ? { ...prev, duration: Math.round(dur) }
+              : prev
+          );
+        }
+      },
+      onPlayStateChange: (playing) => {
+        setIsPreviewPlaying(playing);
+      },
+      onError: () => {
         setIsPreviewPlaying(false);
-      });
+      },
+    });
   };
 
   // Auto-loop preview after 30 seconds in Attach Song modal (Instagram Note style)
   useEffect(() => {
-    if (!isPreviewPlaying || activeModeRef.current !== "preview") return;
+    if (!isPreviewPlaying) return;
     const interval = setInterval(() => {
-      const player = rosterYtPlayerRef.current;
+      const audio = previewAudioRef.current;
       const currentDraft = draftSongRef.current;
-      if (player && typeof player.getCurrentTime === "function" && currentDraft) {
-        const curr = player.getCurrentTime() || 0;
-        const startSec = currentDraft.startTime ?? 0;
-        if (curr >= startSec + CLIP_DURATION) {
-          player.seekTo?.(startSec, true);
+      if (audio && currentDraft) {
+        const curr = audio.currentTime || 0;
+        const dur = audio.duration || previewDuration || 210;
+        const startSec = Math.min(currentDraft.startTime ?? 0, Math.max(0, dur - 2));
+        if (curr >= startSec + CLIP_DURATION || (dur > 0 && curr >= dur - 0.3)) {
+          try {
+            audio.currentTime = startSec;
+          } catch {}
         }
       }
-    }, 300);
+    }, 250);
     return () => clearInterval(interval);
-  }, [isPreviewPlaying]);
+  }, [isPreviewPlaying, previewDuration]);
 
   const handleDraftStartTimeChange = (newStart: number) => {
     if (!draftSong) return;
     const updated = { ...draftSong, startTime: newStart };
     setDraftSong(updated);
 
-    if (activeModeRef.current === "preview" && rosterYtPlayerRef.current && isPreviewPlaying) {
+    const audio = previewAudioRef.current;
+    if (audio && isPreviewPlaying) {
+      const dur = audio.duration && isFinite(audio.duration) ? audio.duration : previewDuration;
+      const safeStart = Math.min(newStart, Math.max(0, dur - 2));
       try {
-        rosterYtPlayerRef.current.seekTo?.(newStart, true);
+        audio.currentTime = safeStart;
       } catch {}
-    } else if (previewAudioRef.current && isPreviewPlaying) {
-      previewAudioRef.current.currentTime = Math.min(newStart, 25);
     }
+  };
+
+  const handleOpenStudent = (student: Student) => {
+    if (student.song && studentAudioRef.current) {
+      // Unlock HTML5 Audio synchronously inside the user's tap gesture on mobile
+      unlockAudioOnGesture(studentAudioRef.current);
+      window.dispatchEvent(new CustomEvent("note-audio-start"));
+    }
+    setSelectedStudent(student);
   };
 
   // Auto-play 30-second song clip from startTime when a Student Profile Modal with a song is opened
   useEffect(() => {
     if (!selectedStudent || !selectedStudent.song) {
+      if (studentStreamCleanupRef.current) {
+        studentStreamCleanupRef.current();
+        studentStreamCleanupRef.current = null;
+      }
       if (studentAudioRef.current) {
         studentAudioRef.current.pause();
-        studentAudioRef.current.src = "";
-      }
-      if (activeModeRef.current === "student" && rosterYtPlayerRef.current) {
-        try {
-          rosterYtPlayerRef.current.pauseVideo?.();
-        } catch {}
-        activeModeRef.current = "none";
+        detachAudioStream(studentAudioRef.current);
+        studentAudioRef.current.removeAttribute("src");
       }
       setIsStudentSongPlaying(false);
       setIsLoadingStudentSong(false);
       setStudentSongCurrentTime(0);
-      setUsingStudentYt(false);
       return;
     }
 
@@ -469,231 +281,121 @@ export default function Roster() {
     const initialFullDur =
       song.duration && song.duration > 30 ? song.duration : Math.max(180, clipStart + CLIP_DURATION);
 
-    // Pause background web music immediately
     window.dispatchEvent(new CustomEvent("note-audio-start"));
     setIsLoadingStudentSong(true);
     setStudentSongDuration(initialFullDur);
     setStudentSongCurrentTime(clipStart);
-    lastPolledTimeRef.current = {
-      mediaTime: clipStart,
-      perfTime: performance.now(),
-    };
 
     const startStudentAudio = async () => {
-      // 1. Resolve full song YouTube videoId (stored on student or resolved dynamically for existing members)
-      let videoId = song.videoId;
-      if (!videoId) {
-        videoId = (await resolveYouTubeVideoId(song.title, song.artist)) || undefined;
-      }
-
+      const stream = await resolveSongStream(
+        song.title,
+        song.artist,
+        song.previewUrl,
+        song.duration
+      );
       if (cancelled) return;
 
-      const playViaYouTube = (vid: string) => {
-        if (cancelled || !rosterYtPlayerRef.current) return;
-        activeModeRef.current = "student";
-        setUsingStudentYt(true);
-        try {
-          rosterYtPlayerRef.current.unMute?.();
-          rosterYtPlayerRef.current.setVolume?.(90);
-          rosterYtPlayerRef.current.loadVideoById({
-            videoId: vid,
-            startSeconds: clipStart,
-          });
-          rosterYtPlayerRef.current.playVideo?.();
-        } catch {
-          // Will fallback if error
-        }
-      };
-
-      if (videoId) {
-        if (rosterYtReadyRef.current && rosterYtPlayerRef.current) {
-          playViaYouTube(videoId);
-          return;
-        } else {
-          pendingActionRef.current = () => playViaYouTube(videoId!);
-          return;
-        }
-      }
-
-      // 2. Fallback to HTML5 audio previewUrl if YouTube is unavailable
-      setUsingStudentYt(false);
-      let audioUrl = song.previewUrl;
-      if (!audioUrl) {
-        try {
-          const query = `${song.title} ${song.artist}`;
-          const res = await fetch(
-            `https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=1`
-          );
-          const data = await res.json();
-          audioUrl = data?.results?.[0]?.previewUrl;
-        } catch (err) {
-          console.error(err);
-        }
-      }
-
-      if (cancelled) return;
-
-      if (!audioUrl) {
+      const audio = studentAudioRef.current;
+      if (!stream || !audio) {
         setIsLoadingStudentSong(false);
         return;
       }
 
-      if (!studentAudioRef.current) {
-        studentAudioRef.current = new Audio();
+      if (studentStreamCleanupRef.current) {
+        studentStreamCleanupRef.current();
+        studentStreamCleanupRef.current = null;
       }
 
-      const audio = studentAudioRef.current;
-      audio.pause();
-      audio.src = audioUrl;
-      audio.volume = 0.9;
+      const safeStart = stream.isFullTrack
+        ? clipStart
+        : Math.min(clipStart, Math.max(0, stream.duration - 2));
 
-      audio.onloadedmetadata = () => {
-        if (cancelled) return;
-        const dur = audio.duration && isFinite(audio.duration) ? audio.duration : 30;
-        setStudentSongDuration(dur);
-        const safeStart = Math.min(clipStart, Math.max(0, dur - 2));
-        audio.currentTime = safeStart;
-        setStudentSongCurrentTime(safeStart);
-        lastPolledTimeRef.current = {
-          mediaTime: safeStart,
-          perfTime: performance.now(),
-        };
-        setIsLoadingStudentSong(false);
-        audio
-          .play()
-          .then(() => {
-            if (!cancelled) setIsStudentSongPlaying(true);
-          })
-          .catch(() => {
-            if (!cancelled) setIsStudentSongPlaying(false);
-          });
-      };
-
-      audio.onended = () => {
-        if (!cancelled) {
-          const safeStart = Math.min(clipStart, Math.max(0, (audio.duration || 30) - 2));
-          audio.currentTime = safeStart;
-          setStudentSongCurrentTime(safeStart);
-          lastPolledTimeRef.current = {
-            mediaTime: safeStart,
-            perfTime: performance.now(),
-          };
-          audio.play().catch(() => setIsStudentSongPlaying(false));
-        }
-      };
-
-      audio.onerror = () => {
-        if (!cancelled) {
+      studentStreamCleanupRef.current = playResolvedStream({
+        audio,
+        stream,
+        startTime: safeStart,
+        volume: 0.9,
+        autoPlay: true,
+        onReady: (dur) => {
+          if (cancelled) return;
+          if (dur > 0) setStudentSongDuration(dur);
+          setIsLoadingStudentSong(false);
+        },
+        onPlayStateChange: (playing) => {
+          if (cancelled) return;
+          setIsStudentSongPlaying(playing);
+          if (playing) setIsLoadingStudentSong(false);
+        },
+        onError: () => {
+          if (cancelled) return;
           setIsLoadingStudentSong(false);
           setIsStudentSongPlaying(false);
-        }
-      };
-
-      audio.load();
+        },
+      });
     };
 
-    startStudentAudio();
+    void startStudentAudio();
 
     return () => {
       cancelled = true;
-      pendingActionRef.current = null;
+      if (studentStreamCleanupRef.current) {
+        studentStreamCleanupRef.current();
+        studentStreamCleanupRef.current = null;
+      }
       if (studentAudioRef.current) {
         studentAudioRef.current.pause();
-        studentAudioRef.current.src = "";
-      }
-      if (activeModeRef.current === "student" && rosterYtPlayerRef.current) {
-        try {
-          rosterYtPlayerRef.current.pauseVideo?.();
-        } catch {}
-        activeModeRef.current = "none";
+        detachAudioStream(studentAudioRef.current);
+        studentAudioRef.current.removeAttribute("src");
       }
       setIsStudentSongPlaying(false);
       setIsLoadingStudentSong(false);
-      setUsingStudentYt(false);
       // Resume background web music when student profile modal closes
       window.dispatchEvent(new CustomEvent("note-audio-stop"));
     };
   }, [selectedStudent]);
 
-  // Smooth 50ms progress bar updater & 30-second Instagram Note loop enforcement for Student Profile
+  // Smooth 40ms progress bar updater & 30-second Instagram Note loop enforcement for Student Profile
   useEffect(() => {
     if (!selectedStudent?.song || !isStudentSongPlaying) return;
 
     const clipStart = selectedStudent.song.startTime ?? 0;
-    const clipEnd = Math.min(studentSongDuration, clipStart + CLIP_DURATION);
 
     const interval = setInterval(() => {
-      if (
-        usingStudentYt &&
-        rosterYtPlayerRef.current &&
-        typeof rosterYtPlayerRef.current.getCurrentTime === "function"
-      ) {
-        const rawCurr = rosterYtPlayerRef.current.getCurrentTime() || 0;
-        const rawDur = rosterYtPlayerRef.current.getDuration?.() || 0;
-        if (rawDur > 0 && Math.abs(rawDur - studentSongDuration) > 1) {
-          setStudentSongDuration(rawDur);
-        }
+      const audio = studentAudioRef.current;
+      if (!audio) return;
 
-        // Loop back to clipStart when 30-second snippet finishes
-        const effectiveEnd = rawDur > 0 ? Math.min(rawDur, clipStart + CLIP_DURATION) : clipEnd;
-        if (rawCurr >= effectiveEnd) {
-          rosterYtPlayerRef.current.seekTo?.(clipStart, true);
-          lastPolledTimeRef.current = {
-            mediaTime: clipStart,
-            perfTime: performance.now(),
-          };
-          setStudentSongCurrentTime(clipStart);
-          return;
-        }
-
-        // Smooth interpolation between YouTube API time updates
-        if (Math.abs(rawCurr - lastPolledTimeRef.current.mediaTime) > 0.02) {
-          lastPolledTimeRef.current = {
-            mediaTime: rawCurr,
-            perfTime: performance.now(),
-          };
-          setStudentSongCurrentTime(rawCurr);
-        } else {
-          const elapsedSec = (performance.now() - lastPolledTimeRef.current.perfTime) / 1000;
-          const interpolated = Math.min(
-            effectiveEnd,
-            lastPolledTimeRef.current.mediaTime + elapsedSec
-          );
-          setStudentSongCurrentTime(interpolated);
-        }
-      } else if (studentAudioRef.current) {
-        const curr = studentAudioRef.current.currentTime;
-        const dur = studentAudioRef.current.duration || 30;
-        const safeStart = Math.min(clipStart, Math.max(0, dur - 2));
-        const effectiveEnd = Math.min(dur, safeStart + CLIP_DURATION);
-        if (curr >= effectiveEnd) {
-          studentAudioRef.current.currentTime = safeStart;
-          setStudentSongCurrentTime(safeStart);
-        } else {
-          setStudentSongCurrentTime(curr);
-        }
+      const dur =
+        audio.duration && isFinite(audio.duration) && audio.duration > 0
+          ? audio.duration
+          : studentSongDuration;
+      if (dur > 0 && Math.abs(dur - studentSongDuration) > 1) {
+        setStudentSongDuration(dur);
       }
-    }, 50);
+
+      const safeStart = dur > 35 ? clipStart : Math.min(clipStart, Math.max(0, dur - 2));
+      const effectiveEnd = Math.min(dur, safeStart + CLIP_DURATION);
+      const curr = audio.currentTime || 0;
+
+      if (curr >= effectiveEnd || (dur > 0 && curr >= dur - 0.25)) {
+        try {
+          audio.currentTime = safeStart;
+        } catch {}
+        setStudentSongCurrentTime(safeStart);
+        if (audio.paused) {
+          audio.play().catch(() => {});
+        }
+      } else {
+        setStudentSongCurrentTime(curr);
+      }
+    }, 40);
 
     return () => clearInterval(interval);
-  }, [selectedStudent, isStudentSongPlaying, usingStudentYt, studentSongDuration]);
+  }, [selectedStudent, isStudentSongPlaying, studentSongDuration]);
 
   const toggleStudentSongPlay = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (usingStudentYt && rosterYtPlayerRef.current) {
-      if (isStudentSongPlaying) {
-        rosterYtPlayerRef.current.pauseVideo?.();
-        setIsStudentSongPlaying(false);
-      } else {
-        window.dispatchEvent(new CustomEvent("note-audio-start"));
-        rosterYtPlayerRef.current.playVideo?.();
-        setIsStudentSongPlaying(true);
-      }
-      return;
-    }
-
     const audio = studentAudioRef.current;
-    if (!audio || !audio.src) return;
+    if (!audio) return;
 
     if (isStudentSongPlaying) {
       audio.pause();
@@ -710,25 +412,20 @@ export default function Roster() {
   const replayStudentSongFromStart = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!selectedStudent?.song) return;
-    const clipStart = selectedStudent.song.startTime ?? 0;
-    window.dispatchEvent(new CustomEvent("note-audio-start"));
-
-    if (usingStudentYt && rosterYtPlayerRef.current) {
-      rosterYtPlayerRef.current.seekTo?.(clipStart, true);
-      rosterYtPlayerRef.current.playVideo?.();
-      lastPolledTimeRef.current = {
-        mediaTime: clipStart,
-        perfTime: performance.now(),
-      };
-      setStudentSongCurrentTime(clipStart);
-      setIsStudentSongPlaying(true);
-      return;
-    }
-
     const audio = studentAudioRef.current;
-    if (!audio || !audio.src) return;
-    const safeStart = Math.min(clipStart, Math.max(0, (audio.duration || 30) - 2));
-    audio.currentTime = safeStart;
+    if (!audio) return;
+
+    const clipStart = selectedStudent.song.startTime ?? 0;
+    const dur =
+      audio.duration && isFinite(audio.duration) && audio.duration > 0
+        ? audio.duration
+        : studentSongDuration;
+    const safeStart = dur > 35 ? clipStart : Math.min(clipStart, Math.max(0, dur - 2));
+
+    window.dispatchEvent(new CustomEvent("note-audio-start"));
+    try {
+      audio.currentTime = safeStart;
+    } catch {}
     setStudentSongCurrentTime(safeStart);
     audio
       .play()
@@ -739,30 +436,27 @@ export default function Roster() {
   const handleStudentSongSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation();
     if (!selectedStudent?.song) return;
+    const audio = studentAudioRef.current;
+    if (!audio || !studentSongDuration) return;
+
     const clipStart = selectedStudent.song.startTime ?? 0;
+    const safeStart =
+      studentSongDuration > 35
+        ? clipStart
+        : Math.min(clipStart, Math.max(0, studentSongDuration - 2));
     const effectiveClipLen = Math.max(
       1,
-      Math.min(CLIP_DURATION, studentSongDuration - clipStart)
+      Math.min(CLIP_DURATION, studentSongDuration - safeStart)
     );
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
     const ratio = Math.max(0, Math.min(1, clickX / rect.width));
-    const targetTime = clipStart + ratio * effectiveClipLen;
+    const targetTime = Math.min(studentSongDuration, safeStart + ratio * effectiveClipLen);
 
-    if (usingStudentYt && rosterYtPlayerRef.current) {
-      rosterYtPlayerRef.current.seekTo?.(targetTime, true);
-      lastPolledTimeRef.current = {
-        mediaTime: targetTime,
-        perfTime: performance.now(),
-      };
+    try {
+      audio.currentTime = targetTime;
       setStudentSongCurrentTime(targetTime);
-      return;
-    }
-
-    const audio = studentAudioRef.current;
-    if (!audio || !studentSongDuration) return;
-    audio.currentTime = Math.min(targetTime, studentSongDuration);
-    setStudentSongCurrentTime(Math.min(targetTime, studentSongDuration));
+    } catch {}
   };
 
   const searchSong = async (e: React.FormEvent) => {
@@ -772,7 +466,18 @@ export default function Roster() {
     try {
       const res = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(songSearch)}&entity=song&limit=5`);
       const data = await res.json();
-      setSongResults(data.results || []);
+      const results = data.results || [];
+      setSongResults(results);
+      results.slice(0, 3).forEach((s: any) => {
+        if (s.trackName) {
+          preloadSongStream(
+            s.trackName,
+            s.artistName || "",
+            s.previewUrl,
+            s.trackTimeMillis ? Math.round(s.trackTimeMillis / 1000) : 210
+          );
+        }
+      });
     } catch (err) {
       console.error(err);
     }
@@ -875,13 +580,9 @@ export default function Roster() {
 
   return (
     <section id="roster" className="w-full relative z-10 bg-neo-yellow/20">
-    {/* Hidden YouTube Player Container for Full-Song Student Profile & Preview Playback */}
-    <div
-      className="pointer-events-none fixed -bottom-10 -left-20 h-px w-px overflow-hidden opacity-0"
-      aria-hidden="true"
-    >
-      <div ref={rosterYtContainerRef} />
-    </div>
+    {/* Direct Ad-Free HTML5 Audio Elements for Student Profile & Preview Playback */}
+    <audio ref={studentAudioRef} playsInline preload="auto" className="hidden" />
+    <audio ref={previewAudioRef} playsInline preload="auto" className="hidden" />
 
     <div className="p-4 sm:p-8 max-w-7xl mx-auto">
       <div className="mb-6 sm:mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -1196,7 +897,7 @@ export default function Roster() {
           return (
             <div 
               key={student.id} 
-              onClick={() => setSelectedStudent(student)}
+              onClick={() => handleOpenStudent(student)}
               className={`bg-white texture-polkadot border-2 sm:border-4 border-black p-2 sm:p-3 pb-3 sm:pb-4 relative group flex flex-col shadow-[4px_4px_0_0_#000] sm:shadow-[6px_6px_0_0_#000] transform transition-transform hover:-translate-y-1 hover:rotate-1 cursor-pointer`}
             >
               {isAdmin && (

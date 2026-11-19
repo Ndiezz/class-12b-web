@@ -38,6 +38,7 @@ export interface GalleryImage {
   url: string;
   caption: string;
   reactions?: Record<string, number>;
+  userReactions?: Record<string, string>;
   createdAt: number;
   likes?: string[];
   comments?: {
@@ -80,6 +81,7 @@ export interface Poll {
   id?: string;
   question: string;
   options: { text: string; votes: number }[];
+  voters?: Record<string, number>;
   createdAt: number;
 }
 
