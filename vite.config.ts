@@ -219,6 +219,43 @@ function audioStreamPlugin(): Plugin {
           }
           return;
         }
+
+        if (
+          urlObj.pathname === '/api/gdrive-detect' ||
+          urlObj.pathname === '/class-12b-web/api/gdrive-detect'
+        ) {
+          const id = (urlObj.searchParams.get('id') || '').trim();
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Cache-Control', 'public, max-age=3600');
+          if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+            res.end(JSON.stringify({ mediaType: 'image' }));
+            return;
+          }
+          try {
+            const driveRes = await fetch(
+              `https://drive.google.com/file/d/${encodeURIComponent(id)}/view`,
+              {
+                headers: {
+                  'User-Agent':
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                  'Accept-Language': 'en-US,en;q=0.9',
+                },
+              }
+            );
+            const html = await driveRes.text();
+            const isVideo =
+              /property="og:type"\s+content="video/i.test(html) ||
+              /property="og:video/i.test(html) ||
+              /"mimeType"\s*:\s*"video\//i.test(html) ||
+              /video\/(mp4|quicktime|webm|x-matroska|x-msvideo|3gpp|mpeg)/i.test(html) ||
+              /property="og:title"\s+content="[^"]+\.(mp4|mov|webm|mkv|avi|m4v|3gp)"/i.test(html);
+
+            res.end(JSON.stringify({ mediaType: isVideo ? 'video' : 'image' }));
+          } catch {
+            res.end(JSON.stringify({ mediaType: 'image' }));
+          }
+          return;
+        }
         next();
       });
     },

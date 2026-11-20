@@ -37,6 +37,7 @@ export interface GalleryImage {
   id?: string;
   url: string;
   caption: string;
+  mediaType?: 'image' | 'video';
   reactions?: Record<string, number>;
   userReactions?: Record<string, string>;
   createdAt: number;
