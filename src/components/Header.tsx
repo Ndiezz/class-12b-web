@@ -49,6 +49,7 @@ export default function Header() {
           <a href="#gallery" className="hover:underline underline-offset-4">Kenangan Kita</a>
           <a href="#timetable" className="hover:underline underline-offset-4">Jadwal Pelajaran</a>
           <a href="#polls" className="hover:underline underline-offset-4">Polls & Voting</a>
+          <a href="#capsule" className="hover:underline underline-offset-4">Time Capsule</a>
         </nav>
 
         <div className="flex items-center gap-2 sm:gap-4 shrink-0">

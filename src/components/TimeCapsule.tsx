@@ -12,9 +12,7 @@ export default function TimeCapsule() {
   const [messages, setMessages] = useState<CapsuleMessage[]>([]);
   const [newMsg, setNewMsg] = useState({ nickname: "", content: "" });
   const [isLocked, setIsLocked] = useState(true);
-  const { role, isAdmin } = useRole();
-
-  const isMemberOrAdmin = role === 'admin' || role === 'member';
+  const { isAdmin } = useRole();
 
   // Time capsule unlocks in 2031 (5 years from now basically, or just a fixed date)
   const unlockDate = new Date("2031-05-01T00:00:00").getTime();
@@ -22,22 +20,22 @@ export default function TimeCapsule() {
   const canUnlock = now >= unlockDate;
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdmin && !canUnlock) return;
     const unsub = onSnapshot(collection(db, "capsules"), (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CapsuleMessage));
       setMessages(data.sort((a, b) => b.createdAt - a.createdAt));
     });
     return unsub;
-  }, [isAdmin]);
+  }, [isAdmin, canUnlock]);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMsg.content) return;
+    if (!newMsg.content.trim()) return;
 
     try {
       await addDoc(collection(db, "capsules"), {
-        ...newMsg,
-        nickname: newMsg.nickname || "ANONYMOUS",
+        nickname: newMsg.nickname.trim() || "ANONYMOUS",
+        content: newMsg.content.trim(),
         unlockDate,
         createdAt: Date.now()
       });
@@ -48,10 +46,6 @@ export default function TimeCapsule() {
       toast.error("Gagal menyegel pesan", { id: 'app-toast', duration: 3000 });
     }
   };
-
-  if (!isMemberOrAdmin) {
-    return null;
-  }
 
   return (
     <section id="capsule" className="w-full bg-[#B800FF]/10 relative z-10 py-12 border-t-4 border-black">
