@@ -619,9 +619,9 @@ export default function Roster() {
           </div>
           <form onSubmit={handleAdd} className="flex flex-col gap-3 sm:gap-4">
             <div className="flex flex-wrap gap-3 sm:gap-4 items-end">
-              <div className="flex flex-col">
+              <div className="flex flex-col flex-1 min-w-[100px] sm:min-w-[120px]">
                 <label className="font-bold text-xs sm:text-sm">Initials</label>
-                <input type="text" className="input-brutal w-16 sm:w-20" maxLength={4} value={newStudent.initials} onChange={e => setNewStudent({...newStudent, initials: e.target.value.toUpperCase()})} required />
+                <input type="text" className="input-brutal w-full" value={newStudent.initials} onChange={e => setNewStudent({...newStudent, initials: e.target.value.toUpperCase()})} required />
               </div>
               <div className="flex flex-col flex-1 min-w-[120px]">
                 <label className="font-bold text-xs sm:text-sm">Name</label>
@@ -893,12 +893,21 @@ export default function Roster() {
 
         {!loading && filteredStudents.map((student) => {
           const bgClass = COLOR_CLASSES[student.color] || "bg-white";
+          const initLen = (student.initials || "").length;
+          const cardFallbackTextSize =
+            initLen <= 4
+              ? "text-4xl sm:text-6xl"
+              : initLen <= 8
+              ? "text-2xl sm:text-4xl"
+              : initLen <= 16
+              ? "text-base sm:text-2xl"
+              : "text-xs sm:text-base";
           
           return (
             <div 
               key={student.id} 
               onClick={() => handleOpenStudent(student)}
-              className={`bg-white texture-polkadot border-2 sm:border-4 border-black p-2 sm:p-3 pb-3 sm:pb-4 relative group flex flex-col shadow-[4px_4px_0_0_#000] sm:shadow-[6px_6px_0_0_#000] transform transition-transform hover:-translate-y-1 hover:rotate-1 cursor-pointer`}
+              className={`bg-white texture-polkadot border-2 sm:border-4 border-black p-2 sm:p-3 pb-3 sm:pb-4 relative group flex flex-col shadow-[4px_4px_0_0_#000] sm:shadow-[6px_6px_0_0_#000] transform transition-transform hover:-translate-y-1 hover:rotate-1 cursor-pointer min-w-0 overflow-hidden`}
             >
               {isAdmin && (
                 <div className="absolute top-1 right-1 sm:top-2 sm:right-2 flex flex-col gap-1 z-50 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
@@ -916,26 +925,28 @@ export default function Roster() {
                 {student.imageUrl ? (
                   <img src={parseImageUrl(student.imageUrl)} alt={student.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                 ) : (
-                  <div className={`w-full h-full ${bgClass} opacity-80 flex items-center justify-center`}>
-                    <span className="font-black text-6xl opacity-30">{student.initials}</span>
+                  <div className={`w-full h-full ${bgClass} opacity-80 flex items-center justify-center p-2 overflow-hidden`}>
+                    <span className={`font-black ${cardFallbackTextSize} opacity-30 text-center break-words [overflow-wrap:anywhere] line-clamp-4 leading-tight`}>
+                      {student.initials}
+                    </span>
                   </div>
                 )}
               </div>
 
               {/* Info Area */}
-              <div className="flex flex-col flex-1 bg-white/80 p-1 -m-1">
+              <div className="flex flex-col flex-1 bg-white/80 p-1 -m-1 min-w-0">
                 {/* Name - NO truncation, allow wrapping */}
-                <h3 className="font-like-span font-bold text-sm sm:text-lg capitalize leading-tight mb-2 sm:mb-3 text-black">
+                <h3 className="font-like-span font-bold text-sm sm:text-lg capitalize leading-tight mb-2 sm:mb-3 text-black break-words [overflow-wrap:anywhere]">
                   {student.name}
                 </h3>
                 
                 {/* Badges */}
-                <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 mb-2">
-                  <span className={`px-1.5 py-0.5 border-2 border-black font-bold uppercase text-[9px] sm:text-[10px] shadow-[2px_2px_0_0_#000] ${bgClass}`}>
+                <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 mb-2 min-w-0">
+                  <span className={`px-1.5 py-0.5 border-2 border-black font-bold uppercase text-[9px] sm:text-[10px] shadow-[2px_2px_0_0_#000] max-w-full break-words [overflow-wrap:anywhere] leading-tight ${bgClass}`}>
                     {student.initials}
                   </span>
                   {student.role && (
-                    <span className={`px-1.5 py-0.5 border-2 border-black font-bold uppercase text-[9px] sm:text-[10px] shadow-[2px_2px_0_0_#000] ${bgClass}`}>
+                    <span className={`px-1.5 py-0.5 border-2 border-black font-bold uppercase text-[9px] sm:text-[10px] shadow-[2px_2px_0_0_#000] max-w-full break-words [overflow-wrap:anywhere] leading-tight ${bgClass}`}>
                       {student.role}
                     </span>
                   )}
@@ -953,14 +964,14 @@ export default function Roster() {
                 
                 {/* Fun Fact */}
                 {student.funFact && (
-                   <p className="font-medium text-[10px] sm:text-xs text-gray-800 mb-2 leading-tight flex-1">
+                   <p className="font-medium text-[10px] sm:text-xs text-gray-800 mb-2 leading-tight flex-1 break-words [overflow-wrap:anywhere]">
                      "{student.funFact}"
                    </p>
                 )}
 
                 {/* Song */}
                 {student.song && (
-                   <div className="mt-auto flex items-center justify-between gap-1 sm:gap-2 bg-white border-2 border-black p-1 sm:p-1.5 shadow-[2px_2px_0_0_#000]">
+                   <div className="mt-auto flex items-center justify-between gap-1 sm:gap-2 bg-white border-2 border-black p-1 sm:p-1.5 shadow-[2px_2px_0_0_#000] min-w-0">
                      <div className="flex items-center gap-1 sm:gap-2 overflow-hidden min-w-0">
                        <img src={student.song.coverUrl} alt="Cover" className="w-6 h-6 sm:w-8 sm:h-8 border-2 border-black shrink-0" />
                        <div className="overflow-hidden min-w-0">
@@ -986,80 +997,157 @@ export default function Roster() {
 
       {/* Student Profile Modal with Automatic 30s Clip Song Player */}
       {selectedStudent && typeof document !== "undefined" && createPortal(
-        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setSelectedStudent(null)}>
-          <div className="bg-white border-4 border-black p-4 sm:p-8 w-full max-w-2xl shadow-[8px_8px_0_0_#000] max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <h3 className="font-black text-3xl sm:text-5xl uppercase tracking-tighter leading-none mb-2">{selectedStudent.name}</h3>
-                <div className="flex flex-wrap gap-2">
-                  <span className={`px-2 py-1 border-2 border-black font-bold uppercase text-xs shadow-[2px_2px_0_0_#000] ${COLOR_CLASSES[selectedStudent.color] || "bg-white"}`}>
+        <div
+          className="fixed inset-0 bg-black/75 z-[100] flex items-center justify-center p-2.5 sm:p-4 backdrop-blur-sm"
+          onClick={() => setSelectedStudent(null)}
+        >
+          <div
+            className="bg-white border-3 sm:border-4 border-black p-3.5 sm:p-8 w-full max-w-[calc(100vw-20px)] sm:max-w-2xl shadow-[4px_4px_0_0_#000] sm:shadow-[8px_8px_0_0_#000] max-h-[88dvh] overflow-y-auto overflow-x-hidden box-border"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-start gap-2.5 mb-4 sm:mb-6 min-w-0">
+              <div className="min-w-0 flex-1">
+                <h3 className="font-black text-2xl sm:text-5xl uppercase tracking-tighter leading-tight mb-2 break-words [overflow-wrap:anywhere]">
+                  {selectedStudent.name}
+                </h3>
+                <div className="flex flex-wrap gap-1.5 sm:gap-2 min-w-0">
+                  <span
+                    className={`px-2 py-0.5 sm:py-1 border-2 border-black font-bold uppercase text-[11px] sm:text-xs shadow-[2px_2px_0_0_#000] max-w-full break-words [overflow-wrap:anywhere] leading-tight ${
+                      COLOR_CLASSES[selectedStudent.color] || "bg-white"
+                    }`}
+                  >
                     {selectedStudent.initials}
                   </span>
                   {selectedStudent.role && (
-                    <span className={`px-2 py-1 border-2 border-black font-bold uppercase text-xs shadow-[2px_2px_0_0_#000] ${COLOR_CLASSES[selectedStudent.color] || "bg-white"}`}>
+                    <span
+                      className={`px-2 py-0.5 sm:py-1 border-2 border-black font-bold uppercase text-[11px] sm:text-xs shadow-[2px_2px_0_0_#000] max-w-full break-words [overflow-wrap:anywhere] leading-tight ${
+                        COLOR_CLASSES[selectedStudent.color] || "bg-white"
+                      }`}
+                    >
                       {selectedStudent.role}
                     </span>
                   )}
                 </div>
               </div>
-              <button onClick={() => setSelectedStudent(null)} className="p-2 hover:bg-gray-200 border-2 border-black rounded-full shrink-0"><X size={24} /></button>
+              <button
+                type="button"
+                onClick={() => setSelectedStudent(null)}
+                className="p-1.5 sm:p-2 hover:bg-gray-200 border-2 border-black rounded-full shrink-0"
+              >
+                <X size={20} className="sm:w-6 sm:h-6" />
+              </button>
             </div>
             
-            <div className="grid md:grid-cols-2 gap-6 sm:gap-8">
-              {/* Image Column */}
-              <div className="relative border-4 border-black aspect-[4/5] bg-gray-100 shadow-[6px_6px_0_0_#000]">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8 min-w-0">
+              {/* Image Column - Proportional on mobile so it fits cleanly without overflowing */}
+              <div className="relative border-3 sm:border-4 border-black aspect-[4/5] w-full max-w-[210px] sm:max-w-none mx-auto bg-gray-100 shadow-[4px_4px_0_0_#000] sm:shadow-[6px_6px_0_0_#000] overflow-hidden min-w-0">
                 {selectedStudent.imageUrl ? (
-                  <img src={parseImageUrl(selectedStudent.imageUrl)} alt={selectedStudent.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                  <img
+                    src={parseImageUrl(selectedStudent.imageUrl)}
+                    alt={selectedStudent.name}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover"
+                  />
                 ) : (
-                  <div className={`w-full h-full ${COLOR_CLASSES[selectedStudent.color] || "bg-white"} opacity-80 flex items-center justify-center`}>
-                    <span className="font-black text-8xl opacity-30">{selectedStudent.initials}</span>
+                  <div
+                    className={`w-full h-full ${
+                      COLOR_CLASSES[selectedStudent.color] || "bg-white"
+                    } opacity-80 flex items-center justify-center p-3 overflow-hidden`}
+                  >
+                    <span
+                      className={`font-black ${
+                        (selectedStudent.initials || "").length <= 4
+                          ? "text-5xl sm:text-7xl"
+                          : (selectedStudent.initials || "").length <= 8
+                          ? "text-3xl sm:text-5xl"
+                          : (selectedStudent.initials || "").length <= 16
+                          ? "text-xl sm:text-3xl"
+                          : "text-base sm:text-xl"
+                      } opacity-30 text-center break-words [overflow-wrap:anywhere] line-clamp-4 leading-tight`}
+                    >
+                      {selectedStudent.initials}
+                    </span>
                   </div>
                 )}
               </div>
               
               {/* Details Column */}
-              <div className="flex flex-col gap-6">
+              <div className="flex flex-col gap-4 sm:gap-6 min-w-0">
                 {selectedStudent.quote && (
-                  <div className="bg-neo-cyan p-4 border-2 border-black shadow-[4px_4px_0_0_#000]">
-                    <p className="font-bold text-lg italic leading-tight">"{selectedStudent.quote}"</p>
-                    <p className="text-xs font-black uppercase tracking-widest mt-2 opacity-70">— Motto</p>
+                  <div className="bg-neo-cyan p-3 sm:p-4 border-2 border-black shadow-[3px_3px_0_0_#000] sm:shadow-[4px_4px_0_0_#000] min-w-0">
+                    <p className="font-bold text-sm sm:text-lg italic leading-snug break-words [overflow-wrap:anywhere]">
+                      "{selectedStudent.quote}"
+                    </p>
+                    <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest mt-1.5 sm:mt-2 opacity-70">
+                      — Motto
+                    </p>
                   </div>
                 )}
 
-                <div className="space-y-4">
+                <div className="space-y-3 sm:space-y-4 min-w-0">
                   {selectedStudent.birthday && (
-                    <div>
-                      <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-gray-500 mb-1">Birthday</p>
-                      <p className="font-bold text-base sm:text-lg">🎂 {selectedStudent.birthday}</p>
+                    <div className="min-w-0">
+                      <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-gray-500 mb-0.5 sm:mb-1">
+                        Birthday
+                      </p>
+                      <p className="font-bold text-sm sm:text-lg break-words [overflow-wrap:anywhere]">
+                        🎂 {selectedStudent.birthday}
+                      </p>
                     </div>
                   )}
 
                   {selectedStudent.favSubject && (
-                    <div>
-                      <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-gray-500 mb-1">Favorite Subject</p>
-                      <p className="font-bold text-base sm:text-lg">📚 {selectedStudent.favSubject}</p>
+                    <div className="min-w-0">
+                      <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-gray-500 mb-0.5 sm:mb-1">
+                        Favorite Subject
+                      </p>
+                      <p className="font-bold text-sm sm:text-lg break-words [overflow-wrap:anywhere]">
+                        📚 {selectedStudent.favSubject}
+                      </p>
                     </div>
                   )}
 
                   {selectedStudent.funFact && (
-                    <div>
-                      <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-gray-500 mb-1">Fun Fact</p>
-                      <p className="font-bold text-base leading-snug">{selectedStudent.funFact}</p>
+                    <div className="min-w-0">
+                      <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-gray-500 mb-0.5 sm:mb-1">
+                        Fun Fact
+                      </p>
+                      <p className="font-bold text-sm sm:text-base leading-snug break-words [overflow-wrap:anywhere]">
+                        {selectedStudent.funFact}
+                      </p>
                     </div>
                   )}
                 </div>
 
                 {/* Socials & Music */}
-                <div className="mt-auto space-y-4 pt-4 border-t-4 border-black">
+                <div className="mt-auto space-y-3 sm:space-y-4 pt-3 sm:pt-4 border-t-4 border-black min-w-0">
                   {(selectedStudent.instagram || selectedStudent.tiktok) && (
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2 min-w-0">
                       {selectedStudent.instagram && (
-                        <a href={selectedStudent.instagram.startsWith("http") ? selectedStudent.instagram : `https://${selectedStudent.instagram}`} target="_blank" rel="noopener noreferrer" className="flex-1 bg-white border-2 border-black p-2 flex items-center justify-center gap-2 font-bold text-xs sm:text-sm hover:-translate-y-1 hover:shadow-[4px_4px_0_0_#000] transition-all">
-                          <Instagram size={16} /> Instagram
+                        <a
+                          href={
+                            selectedStudent.instagram.startsWith("http")
+                              ? selectedStudent.instagram
+                              : `https://${selectedStudent.instagram}`
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 min-w-[110px] bg-white border-2 border-black p-2 flex items-center justify-center gap-1.5 sm:gap-2 font-bold text-xs sm:text-sm hover:-translate-y-1 hover:shadow-[4px_4px_0_0_#000] transition-all"
+                        >
+                          <Instagram size={15} className="shrink-0" /> Instagram
                         </a>
                       )}
                       {selectedStudent.tiktok && (
-                        <a href={selectedStudent.tiktok.startsWith("http") ? selectedStudent.tiktok : `https://${selectedStudent.tiktok}`} target="_blank" rel="noopener noreferrer" className="flex-1 bg-black text-white border-2 border-black p-2 flex items-center justify-center gap-2 font-bold text-xs sm:text-sm hover:-translate-y-1 hover:shadow-[4px_4px_0_0_#000] transition-all">
+                        <a
+                          href={
+                            selectedStudent.tiktok.startsWith("http")
+                              ? selectedStudent.tiktok
+                              : `https://${selectedStudent.tiktok}`
+                          }
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 min-w-[110px] bg-black text-white border-2 border-black p-2 flex items-center justify-center gap-1.5 sm:gap-2 font-bold text-xs sm:text-sm hover:-translate-y-1 hover:shadow-[4px_4px_0_0_#000] transition-all"
+                        >
                           TikTok
                         </a>
                       )}
@@ -1082,21 +1170,21 @@ export default function Roster() {
                     );
 
                     return (
-                      <div className="bg-white border-2 border-black p-3 shadow-[4px_4px_0_0_#000] flex flex-col gap-2.5">
-                        <div className="flex items-center justify-between gap-2.5">
-                          <div className="flex items-center gap-3 overflow-hidden min-w-0">
+                      <div className="bg-white border-2 border-black p-2.5 sm:p-3 shadow-[3px_3px_0_0_#000] sm:shadow-[4px_4px_0_0_#000] flex flex-col gap-2 sm:gap-2.5 min-w-0 max-w-full overflow-hidden">
+                        <div className="flex items-center justify-between gap-2 min-w-0">
+                          <div className="flex items-center gap-2 sm:gap-3 overflow-hidden min-w-0 flex-1">
                             <div className="relative shrink-0">
                               <img
                                 src={selectedStudent.song.coverUrl}
                                 alt="Cover"
-                                className={`w-12 h-12 sm:w-14 sm:h-14 border-2 border-black object-cover ${
+                                className={`w-10 h-10 sm:w-14 sm:h-14 border-2 border-black object-cover ${
                                   isStudentSongPlaying ? "animate-pulse" : ""
                                 }`}
                               />
                             </div>
-                            <div className="overflow-hidden min-w-0">
-                              <div className="flex items-center gap-1.5 mb-0.5">
-                                <span className="text-[10px] font-black uppercase tracking-widest text-neo-pink">
+                            <div className="overflow-hidden min-w-0 flex-1">
+                              <div className="flex items-center gap-1 mb-0.5">
+                                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-neo-pink">
                                   Theme Song
                                 </span>
                                 {isLoadingStudentSong && (
@@ -1108,38 +1196,38 @@ export default function Roster() {
                               <p className="font-black text-xs sm:text-sm truncate uppercase leading-tight">
                                 {selectedStudent.song.title}
                               </p>
-                              <p className="text-xs truncate font-body text-gray-800">
+                              <p className="text-[11px] sm:text-xs truncate font-body text-gray-800">
                                 {selectedStudent.song.artist}
                               </p>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-1.5 shrink-0">
+                          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                             <button
                               type="button"
                               onClick={replayStudentSongFromStart}
-                              className="w-8 h-8 bg-neo-cyan border-2 border-black shadow-[2px_2px_0_0_#000] flex items-center justify-center hover:bg-cyan-300 transition-colors"
+                              className="w-7 h-7 sm:w-8 sm:h-8 bg-neo-cyan border-2 border-black shadow-[2px_2px_0_0_#000] flex items-center justify-center hover:bg-cyan-300 transition-colors"
                               title="Ulangi Bagian Lagu"
                             >
-                              <RotateCcw size={14} />
+                              <RotateCcw size={13} />
                             </button>
                             <button
                               type="button"
                               onClick={toggleStudentSongPlay}
-                              className="w-9 h-9 bg-neo-green border-2 border-black shadow-[2px_2px_0_0_#000] flex items-center justify-center hover:bg-green-400 transition-colors"
+                              className="w-8 h-8 sm:w-9 sm:h-9 bg-neo-green border-2 border-black shadow-[2px_2px_0_0_#000] flex items-center justify-center hover:bg-green-400 transition-colors"
                               title={isStudentSongPlaying ? "Jeda" : "Putar Lagu"}
                             >
                               {isStudentSongPlaying ? (
-                                <Pause size={16} className="fill-current" />
+                                <Pause size={15} className="fill-current" />
                               ) : (
-                                <Play size={16} className="fill-current ml-0.5" />
+                                <Play size={15} className="fill-current ml-0.5" />
                               )}
                             </button>
                           </div>
                         </div>
 
                         {/* Smooth Sliding Progress Bar with Blinking/Pulse Animation */}
-                        <div className="flex flex-col gap-1">
+                        <div className="flex flex-col gap-1 min-w-0">
                           <div
                             onClick={handleStudentSongSeek}
                             className="w-full h-2.5 bg-gray-200 border border-black relative cursor-pointer overflow-hidden"
@@ -1153,7 +1241,7 @@ export default function Roster() {
                               }}
                             />
                           </div>
-                          <div className="flex justify-between text-[10px] font-bold text-gray-700">
+                          <div className="flex justify-between text-[10px] font-bold text-gray-700 tabular-nums">
                             <span>{formatSeconds(studentSongCurrentTime)}</span>
                             <span>{formatSeconds(clipStart + effectiveClipLen)}</span>
                           </div>

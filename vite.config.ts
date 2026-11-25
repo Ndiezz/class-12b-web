@@ -256,6 +256,110 @@ function audioStreamPlugin(): Plugin {
           }
           return;
         }
+
+        if (
+          urlObj.pathname === '/api/gdrive-video' ||
+          urlObj.pathname === '/class-12b-web/api/gdrive-video'
+        ) {
+          const id = (urlObj.searchParams.get('id') || '').trim();
+          if (!id || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+            res.statusCode = 400;
+            res.end('Invalid Google Drive file ID');
+            return;
+          }
+
+          try {
+            const rangeHeader = req.headers['range'];
+            const reqHeaders: Record<string, string> = {
+              'User-Agent':
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            };
+            if (typeof rangeHeader === 'string') {
+              reqHeaders['Range'] = rangeHeader;
+            }
+
+            let targetUrl = `https://drive.usercontent.google.com/download?id=${encodeURIComponent(
+              id
+            )}&export=download&confirm=t`;
+
+            let upstreamRes = await fetch(targetUrl, {
+              headers: reqHeaders,
+              redirect: 'follow',
+            });
+
+            const contentType = upstreamRes.headers.get('content-type') || '';
+
+            // If Google Drive returns a virus-scan confirmation HTML page, extract uuid/confirm params and re-fetch
+            if (contentType.includes('text/html')) {
+              const html = await upstreamRes.text();
+              const uuidMatch = html.match(/name="uuid"\s+value="([^"]+)"/i);
+              const confirmMatch = html.match(/name="confirm"\s+value="([^"]+)"/i);
+              if (uuidMatch?.[1]) {
+                const confirmVal = confirmMatch?.[1] || 't';
+                targetUrl = `https://drive.usercontent.google.com/download?id=${encodeURIComponent(
+                  id
+                )}&export=download&confirm=${encodeURIComponent(
+                  confirmVal
+                )}&uuid=${encodeURIComponent(uuidMatch[1])}`;
+                upstreamRes = await fetch(targetUrl, {
+                  headers: reqHeaders,
+                  redirect: 'follow',
+                });
+              } else {
+                res.statusCode = 404;
+                res.end('Video stream not directly accessible');
+                return;
+              }
+            }
+
+            const finalContentType = upstreamRes.headers.get('content-type') || '';
+            if (
+              (!upstreamRes.ok && upstreamRes.status !== 206) ||
+              finalContentType.includes('text/html') ||
+              !upstreamRes.body
+            ) {
+              res.statusCode = 502;
+              res.end('Unable to stream video');
+              return;
+            }
+
+            res.statusCode = upstreamRes.status;
+            const resolvedMime =
+              finalContentType.includes('video/')
+                ? finalContentType
+                : 'video/mp4';
+            res.setHeader('Content-Type', resolvedMime);
+            res.setHeader('Accept-Ranges', 'bytes');
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+
+            const contentLength = upstreamRes.headers.get('content-length');
+            if (contentLength) {
+              res.setHeader('Content-Length', contentLength);
+            }
+            const contentRange = upstreamRes.headers.get('content-range');
+            if (contentRange) {
+              res.setHeader('Content-Range', contentRange);
+            }
+
+            const { Readable } = await import('stream');
+            const nodeStream = Readable.fromWeb(upstreamRes.body as any);
+            req.on('close', () => {
+              nodeStream.destroy();
+            });
+            nodeStream.on('error', () => {
+              if (!res.writableEnded) res.end();
+            });
+            nodeStream.pipe(res);
+          } catch {
+            if (!res. headersSent) {
+              res.statusCode = 500;
+            }
+            if (!res.writableEnded) {
+              res.end('Stream error');
+            }
+          }
+          return;
+        }
         next();
       });
     },

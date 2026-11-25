@@ -8,7 +8,7 @@ import { GalleryImage } from "@/src/types";
 import { NeoCard } from "./ui/NeoCard";
 import { NeoButton } from "./ui/NeoButton";
 import { createPortal } from "react-dom";
-import { Trash2, Heart, MessageCircle, X, Download, Film, Image as ImageIcon } from "lucide-react";
+import { Trash2, Heart, MessageCircle, X, Download, Film, Image as ImageIcon, Play, Pause, Volume2, VolumeX, Maximize2, Loader2 } from "lucide-react";
 import html2canvas from "html2canvas";
 
 const extractDriveFileId = (url: string): string | null => {
@@ -35,6 +35,22 @@ const getDrivePreviewUrl = (url: string): string | null => {
   const id = extractDriveFileId(url);
   if (id) {
     return `https://drive.google.com/file/d/${id}/preview`;
+  }
+  return null;
+};
+
+const getDriveDirectStreamUrl = (url: string): string | null => {
+  const id = extractDriveFileId(url);
+  if (id) {
+    return `/class-12b-web/api/gdrive-video?id=${encodeURIComponent(id)}`;
+  }
+  return null;
+};
+
+const getDriveAltThumbnailUrl = (url: string): string | null => {
+  const id = extractDriveFileId(url);
+  if (id) {
+    return `https://drive.google.com/thumbnail?id=${id}&sz=w800`;
   }
   return null;
 };
@@ -72,6 +88,255 @@ async function detectMediaTypeFromUrl(url: string): Promise<"image" | "video"> {
   return "image";
 }
 
+const formatVideoTime = (sec: number): string => {
+  if (!Number.isFinite(sec) || sec < 0) return "0:00";
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s < 10 ? "0" : ""}${s}`;
+};
+
+function PopupVideoPlayer({ url, caption }: { url: string; caption?: string }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const progressBarRef = useRef<HTMLDivElement | null>(null);
+
+  const directStreamUrl = getDriveDirectStreamUrl(url) || url;
+  const fallbackIframeUrl = getDrivePreviewUrl(url);
+
+  const [useIframeFallback, setUseIframeFallback] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(true);
+  const [isMuted, setIsMuted] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  useEffect(() => {
+    setUseIframeFallback(false);
+    setIsPlaying(false);
+    setIsBuffering(true);
+    setCurrentTime(0);
+    setDuration(0);
+  }, [url]);
+
+  const togglePlay = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) {
+      v.play().catch(() => {});
+    } else {
+      v.pause();
+    }
+  };
+
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = !v.muted;
+    setIsMuted(v.muted);
+  };
+
+  const handleFullscreen = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const el = containerRef.current || videoRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else if (el.requestFullscreen) {
+      el.requestFullscreen().catch(() => {});
+    } else if ((videoRef.current as any)?.webkitEnterFullscreen) {
+      (videoRef.current as any).webkitEnterFullscreen();
+    }
+  };
+
+  const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    const v = videoRef.current;
+    const bar = progressBarRef.current;
+    if (!v || !bar || !duration) return;
+    const rect = bar.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const target = ratio * duration;
+    v.currentTime = target;
+    setCurrentTime(target);
+  };
+
+  if (useIframeFallback && fallbackIframeUrl) {
+    return (
+      <div className="w-full aspect-video min-h-[260px] sm:min-h-[380px] lg:h-[85vh] bg-[#000] flex items-center justify-center">
+        <iframe
+          src={fallbackIframeUrl}
+          title={caption || "Google Drive Video"}
+          className="w-full h-full border-0"
+          allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+          allowFullScreen
+        />
+      </div>
+    );
+  }
+
+  const progressPercent = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+
+  return (
+    <div
+      ref={containerRef}
+      className="w-full flex flex-col bg-[#000] select-none"
+    >
+      {/* Pure, bright video frame with ZERO dark overlay tint during playback or pause */}
+      <div
+        className="relative w-full flex items-center justify-center bg-[#000] cursor-pointer min-h-[240px] sm:min-h-[340px] max-h-[52vh] lg:max-h-[78vh]"
+        onClick={togglePlay}
+      >
+        <video
+          ref={videoRef}
+          src={directStreamUrl}
+          autoPlay
+          playsInline
+          preload="auto"
+          className="w-full max-h-[52vh] lg:max-h-[78vh] object-contain bg-[#000]"
+          onLoadedMetadata={(e) => {
+            const d = e.currentTarget.duration;
+            if (Number.isFinite(d) && d > 0) setDuration(d);
+            setIsBuffering(false);
+          }}
+          onTimeUpdate={(e) => {
+            setCurrentTime(e.currentTarget.currentTime);
+          }}
+          onPlay={() => {
+            setIsPlaying(true);
+            setIsBuffering(false);
+          }}
+          onPause={() => setIsPlaying(false)}
+          onWaiting={() => setIsBuffering(true)}
+          onPlaying={() => setIsBuffering(false)}
+          onCanPlay={() => setIsBuffering(false)}
+          onError={() => {
+            if (fallbackIframeUrl) {
+              setUseIframeFallback(true);
+            }
+          }}
+        />
+
+        {isBuffering && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div className="bg-neo-yellow border-2 border-[#000] p-2 rounded-full shadow-[2px_2px_0_0_#000]">
+              <Loader2 size={22} className="text-[#000] animate-spin" />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Dedicated bottom progress bar & controls below the video so the video is never darkened */}
+      <div
+        className="w-full bg-[#111827] border-t-2 border-[#000] px-3 py-2 flex items-center gap-2.5 sm:gap-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={togglePlay}
+          className="w-8 h-8 rounded-full bg-neo-yellow border-2 border-[#000] shadow-[2px_2px_0_0_#000] flex items-center justify-center shrink-0 hover:bg-neo-cyan transition-colors"
+          title={isPlaying ? "Pause" : "Play"}
+        >
+          {isPlaying ? (
+            <Pause size={14} className="text-[#000] fill-[#000]" />
+          ) : (
+            <Play size={14} className="text-[#000] fill-[#000] ml-0.5" />
+          )}
+        </button>
+
+        {/* Interactive Progress Bar */}
+        <div
+          ref={progressBarRef}
+          onClick={handleSeek}
+          className="flex-1 h-3 bg-[#374151] border-2 border-[#000] rounded-full overflow-hidden cursor-pointer relative"
+          title="Geser / klik untuk melompat ke detik tertentu"
+        >
+          <div
+            className="h-full bg-neo-pink transition-[width] duration-75"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+
+        <span className="text-[11px] sm:text-xs font-black text-white tabular-nums shrink-0">
+          {formatVideoTime(currentTime)} / {formatVideoTime(duration)}
+        </span>
+
+        <button
+          type="button"
+          onClick={toggleMute}
+          className="p-1.5 text-white hover:text-neo-yellow transition-colors shrink-0"
+          title={isMuted ? "Unmute" : "Mute"}
+        >
+          {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+        </button>
+
+        <button
+          type="button"
+          onClick={handleFullscreen}
+          className="p-1.5 text-white hover:text-neo-cyan transition-colors shrink-0"
+          title="Layar Penuh"
+        >
+          <Maximize2 size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function VideoCardThumbnail({ url, caption }: { url: string; caption?: string }) {
+  const driveId = extractDriveFileId(url);
+  const primaryThumb = driveId ? `https://lh3.googleusercontent.com/d/${driveId}` : "";
+  const secondaryThumb = getDriveAltThumbnailUrl(url) || "";
+  const [thumbStage, setThumbStage] = useState<0 | 1 | 2>(driveId ? 0 : 2);
+
+  useEffect(() => {
+    setThumbStage(driveId ? 0 : 2);
+  }, [url, driveId]);
+
+  const currentSrc = thumbStage === 0 ? primaryThumb : thumbStage === 1 ? secondaryThumb : "";
+
+  return (
+    <div className="border-2 sm:border-4 border-[#000] overflow-hidden bg-[#111827] relative aspect-[4/3] flex items-center justify-center">
+      {currentSrc ? (
+        <img
+          src={currentSrc}
+          alt={caption || "Video thumbnail"}
+          referrerPolicy="no-referrer"
+          className="w-full h-full object-cover opacity-90 group-hover:scale-105 transition-transform duration-300"
+          onError={() => {
+            if (thumbStage === 0 && secondaryThumb) {
+              setThumbStage(1);
+            } else {
+              setThumbStage(2);
+            }
+          }}
+        />
+      ) : (
+        <div className="w-full h-full bg-gradient-to-br from-[#1f2937] via-[#111827] to-[#000] flex flex-col items-center justify-center p-4 text-center">
+          <Film size={28} className="text-neo-cyan mb-1 opacity-80" />
+          <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-white/80">
+            Klik untuk Putar Video
+          </span>
+        </div>
+      )}
+
+      {/* Dark scrim & centered Neo-Brutalist Play Button */}
+      <div className="absolute inset-0 bg-[#000]/25 group-hover:bg-[#000]/35 transition-colors flex items-center justify-center pointer-events-none">
+        <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-full bg-neo-yellow border-2 sm:border-3 border-[#000] shadow-[3px_3px_0_0_#000] flex items-center justify-center group-hover:scale-110 transition-transform">
+          <Play size={22} className="text-[#000] fill-[#000] ml-0.5 sm:w-6 sm:h-6" />
+        </div>
+      </div>
+
+      {/* Top-left VIDEO badge */}
+      <div className="absolute top-2 left-2 bg-neo-pink border-2 border-[#000] px-1.5 py-0.5 shadow-[2px_2px_0_0_#000] flex items-center gap-1 pointer-events-none">
+        <Film size={10} className="text-[#000]" />
+        <span className="font-black text-[9px] sm:text-[10px] uppercase tracking-wider text-[#000]">VIDEO</span>
+      </div>
+    </div>
+  );
+}
+
 export default function MemoryWall() {
   const [images, setImages] = useState<GalleryImage[]>([]);
   const { isAdmin, isMember } = useRole();
@@ -86,11 +351,31 @@ export default function MemoryWall() {
   const autoCheckedIdsRef = useRef<Set<string>>(new Set());
   const clientId = getOrCreateClientId();
 
+  const resolveItemMediaType = (img: GalleryImage): "image" | "video" => {
+    if (img.mediaType === "video" || img.mediaType === "image") {
+      return img.mediaType;
+    }
+    if (isDirectVideoUrl(img.url)) {
+      return "video";
+    }
+    return "image";
+  };
+
   useEffect(() => {
     if (selectedImg) document.body.style.overflow = "hidden";
     else document.body.style.overflow = "";
     return () => { document.body.style.overflow = ""; };
   }, [selectedImg]);
+
+  // Automatically pause background MusicPlayer when a Video Polaroid Popup is open, and resume when closed
+  const isSelectedVideo = !!(selectedImg && resolveItemMediaType(selectedImg) === "video");
+  useEffect(() => {
+    if (!isSelectedVideo) return;
+    window.dispatchEvent(new CustomEvent("note-audio-start"));
+    return () => {
+      window.dispatchEvent(new CustomEvent("note-audio-stop"));
+    };
+  }, [isSelectedVideo, selectedImg?.id]);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "gallery"), (snapshot) => {
@@ -127,16 +412,6 @@ export default function MemoryWall() {
     });
   }, [images]);
 
-  const resolveItemMediaType = (img: GalleryImage): "image" | "video" => {
-    if (img.mediaType === "video" || img.mediaType === "image") {
-      return img.mediaType;
-    }
-    if (isDirectVideoUrl(img.url)) {
-      return "video";
-    }
-    return "image";
-  };
-
   const handleToggleMediaType = async (e: React.MouseEvent, img: GalleryImage) => {
     e.stopPropagation();
     if (!img.id) return;
@@ -145,7 +420,7 @@ export default function MemoryWall() {
     try {
       await updateDoc(doc(db, "gallery", img.id), { mediaType: nextType });
       toast.success(
-        nextType === "video" ? "Diubah ke pemutar Video!" : "Diubah ke tampilan Foto!",
+        nextType === "video" ? "Diubah ke mode Video!" : "Diubah ke tampilan Foto!",
         { id: "app-toast", duration: 2000 }
       );
     } catch (err) {
@@ -242,48 +517,52 @@ export default function MemoryWall() {
 
     try {
       const imgRef = doc(db, "gallery", img.id);
-      let actionResult: "added" | "switched" | "removed" = "added";
 
-      await runTransaction(db, async (transaction) => {
-        const snap = await transaction.get(imgRef);
-        if (!snap.exists()) return;
+      const actionResult = await runTransaction(
+        db,
+        async (transaction): Promise<"added" | "switched" | "removed"> => {
+          const snap = await transaction.get(imgRef);
+          if (!snap.exists()) return "added";
 
-        const data = snap.data() as GalleryImage;
-        const reactions: Record<string, number> = { ...(data.reactions || {}) };
-        const userReactions: Record<string, string> = { ...(data.userReactions || {}) };
+          const data = snap.data() as GalleryImage;
+          const reactions: Record<string, number> = { ...(data.reactions || {}) };
+          const userReactions: Record<string, string> = { ...(data.userReactions || {}) };
 
-        let previousEmoji: string | undefined = userReactions[clientId];
-        if (!previousEmoji) {
-          try {
-            const localSaved = localStorage.getItem(storageKey);
-            if (localSaved && (reactions[localSaved] || 0) > 0) {
-              previousEmoji = localSaved;
+          let previousEmoji: string | undefined = userReactions[clientId];
+          if (!previousEmoji) {
+            try {
+              const localSaved = localStorage.getItem(storageKey);
+              if (localSaved && (reactions[localSaved] || 0) > 0) {
+                previousEmoji = localSaved;
+              }
+            } catch {
+              // ignore storage errors
             }
-          } catch {
-            // ignore storage errors
           }
-        }
 
-        if (previousEmoji === emoji) {
-          reactions[emoji] = Math.max(0, (reactions[emoji] || 1) - 1);
-          delete userReactions[clientId];
-          actionResult = "removed";
-        } else if (previousEmoji && previousEmoji !== emoji) {
-          reactions[previousEmoji] = Math.max(0, (reactions[previousEmoji] || 1) - 1);
-          reactions[emoji] = (reactions[emoji] || 0) + 1;
-          userReactions[clientId] = emoji;
-          actionResult = "switched";
-        } else {
-          reactions[emoji] = (reactions[emoji] || 0) + 1;
-          userReactions[clientId] = emoji;
-          actionResult = "added";
-        }
+          let result: "added" | "switched" | "removed" = "added";
+          if (previousEmoji === emoji) {
+            reactions[emoji] = Math.max(0, (reactions[emoji] || 1) - 1);
+            delete userReactions[clientId];
+            result = "removed";
+          } else if (previousEmoji && previousEmoji !== emoji) {
+            reactions[previousEmoji] = Math.max(0, (reactions[previousEmoji] || 1) - 1);
+            reactions[emoji] = (reactions[emoji] || 0) + 1;
+            userReactions[clientId] = emoji;
+            result = "switched";
+          } else {
+            reactions[emoji] = (reactions[emoji] || 0) + 1;
+            userReactions[clientId] = emoji;
+            result = "added";
+          }
 
-        transaction.update(imgRef, {
-          reactions,
-          userReactions
-        });
-      });
+          transaction.update(imgRef, {
+            reactions,
+            userReactions
+          });
+          return result;
+        }
+      );
 
       try {
         localStorage.removeItem(`emoji_spam_${img.id}`);
@@ -440,7 +719,6 @@ export default function MemoryWall() {
           const isReactPending = !!pendingKeys[`react_${img.id}`];
           const itemMediaType = resolveItemMediaType(img);
           const isVideo = itemMediaType === "video";
-          const drivePreviewUrl = getDrivePreviewUrl(img.url);
           
           return (
             <div 
@@ -464,7 +742,7 @@ export default function MemoryWall() {
                   type="button"
                   onClick={(e) => handleToggleMediaType(e, img)}
                   className="bg-[#fff] border border-[#000] p-0.5 sm:p-1 text-[#000] hover:bg-neo-yellow hover:text-[#000] rounded-full shadow-[1px_1px_0_0_#000]"
-                  title={isVideo ? "Ubah tampilan ke Foto" : "Ubah tampilan ke Pemutar Video"}
+                  title={isVideo ? "Ubah tampilan ke Foto" : "Ubah tampilan ke Video"}
                 >
                   {isVideo ? <ImageIcon size={14} className="sm:w-5 sm:h-5" /> : <Film size={14} className="sm:w-5 sm:h-5" />}
                 </button>
@@ -481,28 +759,7 @@ export default function MemoryWall() {
               </div>
 
               {isVideo ? (
-                <div
-                  className="border-2 sm:border-4 border-[#000] overflow-hidden bg-[#000] aspect-video relative"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {drivePreviewUrl ? (
-                    <iframe
-                      src={drivePreviewUrl}
-                      title={img.caption || "Google Drive Video"}
-                      className="w-full h-full border-0"
-                      allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-                      allowFullScreen
-                    />
-                  ) : (
-                    <video
-                      src={img.url}
-                      controls
-                      playsInline
-                      preload="metadata"
-                      className="w-full h-full object-contain bg-[#000]"
-                    />
-                  )}
-                </div>
+                <VideoCardThumbnail url={img.url} caption={img.caption} />
               ) : (
                 <div className="border-2 sm:border-4 border-[#000] overflow-hidden bg-[#e5e7eb]">
                   <img
@@ -511,7 +768,7 @@ export default function MemoryWall() {
                     referrerPolicy="no-referrer"
                     className="w-full h-auto object-cover"
                     onError={() => {
-                      // If an untyped Google Drive link fails to render as a photo, automatically switch to video player
+                      // If an untyped Google Drive link fails to render as a photo, automatically switch to video mode
                       if (!img.mediaType && img.id && extractDriveFileId(img.url)) {
                         updateDoc(doc(db, "gallery", img.id), { mediaType: "video" }).catch(() => {});
                       }
@@ -593,30 +850,14 @@ export default function MemoryWall() {
         )}
       </div>
 
-      {/* Image / Video Modal with Comments */}
+      {/* Image / Video Polaroid Popup Modal with Comments */}
       {selectedImg && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 bg-[#000]/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setSelectedImg(null)}>
           <div className="bg-[#fff] border-4 border-[#000] w-full max-w-5xl shadow-[8px_8px_0_0_#000] flex flex-col lg:flex-row max-h-[90vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
-            {/* Media side (Photo or Google Drive Video Player with default progress bar) */}
+            {/* Media side (Photo or Bright Direct Video Player with bottom progress bar) */}
             <div className="lg:w-2/3 bg-[#000] flex items-center justify-center relative border-b-4 lg:border-b-0 lg:border-r-4 border-[#000] min-h-[260px] sm:min-h-[360px]">
               {resolveItemMediaType(selectedImg) === "video" ? (
-                getDrivePreviewUrl(selectedImg.url) ? (
-                  <iframe
-                    src={getDrivePreviewUrl(selectedImg.url)!}
-                    title={selectedImg.caption || "Google Drive Video"}
-                    className="w-full h-[45vh] sm:h-[55vh] lg:h-[85vh] border-0"
-                    allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-                    allowFullScreen
-                  />
-                ) : (
-                  <video
-                    src={selectedImg.url}
-                    controls
-                    autoPlay
-                    playsInline
-                    className="w-full max-h-[50vh] lg:max-h-[85vh] object-contain bg-[#000]"
-                  />
-                )
+                <PopupVideoPlayer url={selectedImg.url} caption={selectedImg.caption} />
               ) : (
                 <img
                   src={parseImageUrl(selectedImg.url)}
@@ -628,7 +869,7 @@ export default function MemoryWall() {
               <button
                 type="button"
                 onClick={() => setSelectedImg(null)}
-                className="absolute top-4 right-4 p-2 bg-[#fff] hover:bg-[#e5e7eb] border-2 border-[#000] rounded-full shadow-[2px_2px_0_0_#000] z-10"
+                className="absolute top-3 right-3 sm:top-4 sm:right-4 p-2 bg-[#fff] hover:bg-[#e5e7eb] border-2 border-[#000] rounded-full shadow-[2px_2px_0_0_#000] z-20"
               >
                 <X size={20} />
               </button>

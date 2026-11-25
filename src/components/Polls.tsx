@@ -95,59 +95,63 @@ export default function Polls() {
 
     try {
       const pollRef = doc(db, "polls", poll.id);
-      let actionResult: "voted" | "switched" | "unvoted" = "voted";
 
-      await runTransaction(db, async (transaction) => {
-        const snap = await transaction.get(pollRef);
-        if (!snap.exists()) return;
+      const actionResult = await runTransaction(
+        db,
+        async (transaction): Promise<"voted" | "switched" | "unvoted"> => {
+          const snap = await transaction.get(pollRef);
+          if (!snap.exists()) return "voted";
 
-        const data = snap.data() as Poll;
-        const options = (data.options || []).map(opt => ({ ...opt }));
-        const voters: Record<string, number> = { ...(data.voters || {}) };
+          const data = snap.data() as Poll;
+          const options = (data.options || []).map(opt => ({ ...opt }));
+          const voters: Record<string, number> = { ...(data.voters || {}) };
 
-        if (optionIndex < 0 || optionIndex >= options.length) return;
+          if (optionIndex < 0 || optionIndex >= options.length) return "voted";
 
-        let previousIndex: number | undefined =
-          typeof voters[clientId] === "number" ? voters[clientId] : undefined;
+          let previousIndex: number | undefined =
+            typeof voters[clientId] === "number" ? voters[clientId] : undefined;
 
-        if (previousIndex === undefined) {
-          try {
-            const savedChoice = localStorage.getItem(choiceStorageKey);
-            if (savedChoice !== null) {
-              const parsed = parseInt(savedChoice, 10);
-              if (!Number.isNaN(parsed) && parsed >= 0 && parsed < options.length && options[parsed].votes > 0) {
-                previousIndex = parsed;
+          if (previousIndex === undefined) {
+            try {
+              const savedChoice = localStorage.getItem(choiceStorageKey);
+              if (savedChoice !== null) {
+                const parsed = parseInt(savedChoice, 10);
+                if (!Number.isNaN(parsed) && parsed >= 0 && parsed < options.length && options[parsed].votes > 0) {
+                  previousIndex = parsed;
+                }
               }
+            } catch {
+              // ignore storage errors
             }
-          } catch {
-            // ignore storage errors
           }
-        }
 
-        if (previousIndex === optionIndex) {
-          options[optionIndex].votes = Math.max(0, options[optionIndex].votes - 1);
-          delete voters[clientId];
-          actionResult = "unvoted";
-        } else if (
-          typeof previousIndex === "number" &&
-          previousIndex >= 0 &&
-          previousIndex < options.length
-        ) {
-          options[previousIndex].votes = Math.max(0, options[previousIndex].votes - 1);
-          options[optionIndex].votes = (options[optionIndex].votes || 0) + 1;
-          voters[clientId] = optionIndex;
-          actionResult = "switched";
-        } else {
-          options[optionIndex].votes = (options[optionIndex].votes || 0) + 1;
-          voters[clientId] = optionIndex;
-          actionResult = "voted";
-        }
+          let result: "voted" | "switched" | "unvoted" = "voted";
+          if (previousIndex === optionIndex) {
+            options[optionIndex].votes = Math.max(0, options[optionIndex].votes - 1);
+            delete voters[clientId];
+            result = "unvoted";
+          } else if (
+            typeof previousIndex === "number" &&
+            previousIndex >= 0 &&
+            previousIndex < options.length
+          ) {
+            options[previousIndex].votes = Math.max(0, options[previousIndex].votes - 1);
+            options[optionIndex].votes = (options[optionIndex].votes || 0) + 1;
+            voters[clientId] = optionIndex;
+            result = "switched";
+          } else {
+            options[optionIndex].votes = (options[optionIndex].votes || 0) + 1;
+            voters[clientId] = optionIndex;
+            result = "voted";
+          }
 
-        transaction.update(pollRef, {
-          options,
-          voters
-        });
-      });
+          transaction.update(pollRef, {
+            options,
+            voters
+          });
+          return result;
+        }
+      );
 
       try {
         if (actionResult === "unvoted") {

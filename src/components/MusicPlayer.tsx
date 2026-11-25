@@ -9,6 +9,8 @@ import {
   Minimize2,
   ListMusic,
   Disc3,
+  Repeat,
+  Repeat1,
 } from 'lucide-react';
 import {
   resolveSongStream,
@@ -27,16 +29,16 @@ interface Track {
 
 const PLAYLIST: Track[] = [
   {
-    title: 'Tujuh Belas',
-    artist: 'Tulus',
-    id: 'tulus-17',
-    targetDuration: 255,
-  },
-  {
     title: 'Kita Ke Sana',
     artist: 'Hindia',
     id: 'hindia-kita-ke-sana',
     targetDuration: 283,
+  },
+  {
+    title: 'Tujuh Belas',
+    artist: 'Tulus',
+    id: 'tulus-17',
+    targetDuration: 255,
   },
   {
     title: 'Graduation Song',
@@ -51,6 +53,7 @@ export const MusicPlayer: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [showPlaylist, setShowPlaylist] = useState(false);
+  const [loopMode, setLoopMode] = useState<'all' | 'one'>('all');
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(0.85);
   const [showVolumeSlider, setShowVolumeSlider] = useState(false);
@@ -68,15 +71,21 @@ export const MusicPlayer: React.FC = () => {
   const userPausedRef = useRef(false);
   const hasStartedOnceRef = useRef(false);
   const currentTrackIndexRef = useRef(currentTrackIndex);
+  const loopModeRef = useRef<'all' | 'one'>(loopMode);
   const isPlayingRef = useRef(isPlaying);
   const isMutedRef = useRef(isMuted);
   const volumeRef = useRef(volume);
   const pausedByNoteRef = useRef(false);
   const noteAudioActiveRef = useRef(false);
+  const lastEndedAtRef = useRef(0);
 
   useEffect(() => {
     currentTrackIndexRef.current = currentTrackIndex;
   }, [currentTrackIndex]);
+
+  useEffect(() => {
+    loopModeRef.current = loopMode;
+  }, [loopMode]);
 
   useEffect(() => {
     isPlayingRef.current = isPlaying;
@@ -128,6 +137,7 @@ export const MusicPlayer: React.FC = () => {
       cleanupStreamRef.current = null;
     }
 
+    currentTrackIndexRef.current = index;
     loadedTrackIndexRef.current = index;
     setDuration(track.targetDuration);
 
@@ -261,19 +271,23 @@ export const MusicPlayer: React.FC = () => {
     };
   }, [waitingForInteraction, isPlaying, attemptPlay]);
 
-  const switchTrack = (nextIndex: number) => {
-    userPausedRef.current = false;
-    hasStartedOnceRef.current = true;
-    setWaitingForInteraction(false);
-    setCurrentTrackIndex(nextIndex);
-    setProgress(0);
-    setCurrentTime(0);
+  const switchTrack = useCallback(
+    (nextIndex: number) => {
+      userPausedRef.current = false;
+      hasStartedOnceRef.current = true;
+      setWaitingForInteraction(false);
+      currentTrackIndexRef.current = nextIndex;
+      setCurrentTrackIndex(nextIndex);
+      setProgress(0);
+      setCurrentTime(0);
 
-    if (audioRef.current) {
-      unlockAudioOnGesture(audioRef.current);
-    }
-    void loadAndPlayTrack(nextIndex, true);
-  };
+      if (audioRef.current && !audioRef.current.src) {
+        unlockAudioOnGesture(audioRef.current);
+      }
+      void loadAndPlayTrack(nextIndex, true);
+    },
+    [loadAndPlayTrack]
+  );
 
   const togglePlay = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -288,9 +302,9 @@ export const MusicPlayer: React.FC = () => {
       userPausedRef.current = false;
       hasStartedOnceRef.current = true;
       setWaitingForInteraction(false);
-      if (loadedTrackIndexRef.current !== currentTrackIndex || !audio.src) {
+      if (loadedTrackIndexRef.current !== currentTrackIndexRef.current || !audio.src) {
         unlockAudioOnGesture(audio);
-        void loadAndPlayTrack(currentTrackIndex, true);
+        void loadAndPlayTrack(currentTrackIndexRef.current, true);
       } else {
         audio
           .play()
@@ -300,17 +314,50 @@ export const MusicPlayer: React.FC = () => {
     }
   };
 
-  const nextTrack = (e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    const nextIndex = (currentTrackIndex + 1) % PLAYLIST.length;
-    switchTrack(nextIndex);
-  };
+  const nextTrack = useCallback(
+    (e?: React.MouseEvent) => {
+      if (e) e.stopPropagation();
+      const nextIndex = (currentTrackIndexRef.current + 1) % PLAYLIST.length;
+      switchTrack(nextIndex);
+    },
+    [switchTrack]
+  );
 
-  const prevTrack = (e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    const prevIndex = (currentTrackIndex - 1 + PLAYLIST.length) % PLAYLIST.length;
-    switchTrack(prevIndex);
-  };
+  const prevTrack = useCallback(
+    (e?: React.MouseEvent) => {
+      if (e) e.stopPropagation();
+      const prevIndex =
+        (currentTrackIndexRef.current - 1 + PLAYLIST.length) % PLAYLIST.length;
+      switchTrack(prevIndex);
+    },
+    [switchTrack]
+  );
+
+  const handleTrackEnded = useCallback(() => {
+    const now = Date.now();
+    if (now - lastEndedAtRef.current < 800) return;
+    lastEndedAtRef.current = now;
+
+    if (loopModeRef.current === 'one') {
+      const audio = audioRef.current;
+      if (audio && audio.src) {
+        try {
+          audio.currentTime = 0;
+          setCurrentTime(0);
+          setProgress(0);
+          void audio.play().then(() => setIsPlaying(true));
+          return;
+        } catch {
+          // Fall through to reload current track
+        }
+      }
+      switchTrack(currentTrackIndexRef.current);
+    } else {
+      // Auto-advance to the next song and loop back to first song after the end of playlist
+      const nextIndex = (currentTrackIndexRef.current + 1) % PLAYLIST.length;
+      switchTrack(nextIndex);
+    }
+  }, [switchTrack]);
 
   const applyVolumeLevel = useCallback((nextVolume: number) => {
     const clamped = Math.max(0, Math.min(1, nextVolume));
@@ -408,6 +455,17 @@ export const MusicPlayer: React.FC = () => {
     if (dur > 0) {
       setDuration(dur);
       setProgress(Math.min(100, (curr / dur) * 100));
+      if (
+        audio.ended ||
+        (dur > 10 &&
+          curr >= dur - 0.2 &&
+          audio.paused &&
+          !userPausedRef.current &&
+          !noteAudioActiveRef.current &&
+          hasStartedOnceRef.current)
+      ) {
+        handleTrackEnded();
+      }
     }
   };
 
@@ -431,7 +489,7 @@ export const MusicPlayer: React.FC = () => {
         onTimeUpdate={handleTimeUpdate}
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
-        onEnded={() => nextTrack()}
+        onEnded={handleTrackEnded}
       />
 
       {isMinimized ? (
@@ -537,12 +595,33 @@ export const MusicPlayer: React.FC = () => {
             </div>
             <div className="flex items-center justify-between text-[10px] text-zinc-400">
               <span>{formatTime(currentTime)}</span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 {waitingForInteraction && !isPlaying && (
                   <span className="text-emerald-400 animate-pulse">
                     Ketuk layar untuk memutar
                   </span>
                 )}
+
+                {/* Loop Mode Toggle (All Playlist Auto-Next Loop vs Single Song Loop) */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLoopMode((prev) => (prev === 'all' ? 'one' : 'all'));
+                  }}
+                  className="text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-0.5 px-1 py-0.5 rounded bg-white/5 hover:bg-white/10"
+                  title={
+                    loopMode === 'all'
+                      ? 'Loop Semua Lagu (Otomatis Next) — Klik untuk Loop 1 Lagu'
+                      : 'Loop 1 Lagu — Klik untuk Loop Semua Lagu (Otomatis Next)'
+                  }
+                >
+                  {loopMode === 'all' ? (
+                    <Repeat className="w-3.5 h-3.5" />
+                  ) : (
+                    <Repeat1 className="w-3.5 h-3.5" />
+                  )}
+                </button>
 
                 {/* Vertical Volume Slider Trigger & Popover */}
                 <div

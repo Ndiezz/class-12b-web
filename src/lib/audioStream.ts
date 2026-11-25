@@ -52,7 +52,7 @@ export async function resolveSongStream(
 
     // 1. Try server-side ad-free full-track audio resolver (/api/audio-resolve)
     try {
-      const base = import.meta.env.BASE_URL || "/";
+      const base = (import.meta as any).env?.BASE_URL || "/";
       const apiPath = `${
         base.endsWith("/") ? base : base + "/"
       }api/audio-resolve?q=${encodeURIComponent(query)}&duration=${
