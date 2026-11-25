@@ -62,6 +62,39 @@ const parseImageUrl = (url: string) => {
   return url;
 };
 
+const formatInstagramUrl = (raw?: string) => {
+  const trimmed = (raw || "").trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^(www\.)?instagram\.com/i.test(trimmed)) return `https://${trimmed}`;
+  const handle = trimmed.replace(/^@/, "");
+  return `https://www.instagram.com/${handle}`;
+};
+
+const formatTikTokUrl = (raw?: string) => {
+  const trimmed = (raw || "").trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^(www\.)?tiktok\.com/i.test(trimmed) || /^vt\.tiktok\.com/i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  const handle = trimmed.startsWith("@") ? trimmed : `@${trimmed}`;
+  return `https://www.tiktok.com/${handle}`;
+};
+
+const TikTokIcon = ({ size = 14, className = "" }: { size?: number; className?: string }) => (
+  <svg
+    width={size}
+    height={size}
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    className={className}
+    aria-hidden="true"
+  >
+    <path d="M19.59 6.69a4.83 4.83 0 0 1-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 0 1-5.2 1.74 2.89 2.89 0 0 1 2.31-4.64 2.93 2.93 0 0 1 .88.13V9.4a6.84 6.84 0 0 0-1-.05A6.33 6.33 0 0 0 5 20.1a6.34 6.34 0 0 0 10.86-4.43v-7a8.16 8.16 0 0 0 4.77 1.52v-3.4a4.85 4.85 0 0 1-1-.1Z" />
+  </svg>
+);
+
 export default function Roster() {
   const [students, setStudents] = useState<Student[]>([]);
   const { isAdmin } = useRole();
@@ -940,7 +973,7 @@ export default function Roster() {
                   {student.name}
                 </h3>
                 
-                {/* Badges */}
+                {/* Badges & Direct Social Logo Shortcuts */}
                 <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 mb-2 min-w-0">
                   <span className={`px-1.5 py-0.5 border-2 border-black font-bold uppercase text-[9px] sm:text-[10px] shadow-[2px_2px_0_0_#000] max-w-full break-words [overflow-wrap:anywhere] leading-tight ${bgClass}`}>
                     {student.initials}
@@ -955,10 +988,33 @@ export default function Roster() {
                       🎂 {student.birthday}
                     </span>
                   )}
-                  {student.instagram && (
-                    <a href={student.instagram.startsWith("http") ? student.instagram : `https://${student.instagram}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="ml-auto bg-white border-2 border-black p-1 shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] transition-all">
-                      <Instagram size={12} className="sm:w-3.5 sm:h-3.5" />
-                    </a>
+                  {(student.instagram || student.tiktok) && (
+                    <div className="ml-auto flex items-center gap-1 shrink-0">
+                      {student.instagram && (
+                        <a
+                          href={formatInstagramUrl(student.instagram)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          title="Buka Instagram"
+                          className="bg-white text-black border-2 border-black p-1 shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] transition-all flex items-center justify-center"
+                        >
+                          <Instagram size={12} className="sm:w-3.5 sm:h-3.5" />
+                        </a>
+                      )}
+                      {student.tiktok && (
+                        <a
+                          href={formatTikTokUrl(student.tiktok)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          title="Buka Akun TikTok"
+                          className="bg-black text-white border-2 border-black p-1 shadow-[2px_2px_0_0_#000] hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#000] transition-all flex items-center justify-center"
+                        >
+                          <TikTokIcon size={12} className="sm:w-3.5 sm:h-3.5" />
+                        </a>
+                      )}
+                    </div>
                   )}
                 </div>
                 
@@ -995,24 +1051,25 @@ export default function Roster() {
         )}
       </div>
 
-      {/* Student Profile Modal with Automatic 30s Clip Song Player */}
+      {/* Student Profile Modal — Full Single-Screen No-Scroll Layout on Mobile + Automatic 30s Clip Song Player */}
       {selectedStudent && typeof document !== "undefined" && createPortal(
         <div
-          className="fixed inset-0 bg-black/75 z-[100] flex items-center justify-center p-2.5 sm:p-4 backdrop-blur-sm"
+          className="fixed inset-0 bg-black/75 z-[100] flex items-center justify-center p-2 sm:p-4 backdrop-blur-sm"
           onClick={() => setSelectedStudent(null)}
         >
           <div
-            className="bg-white border-3 sm:border-4 border-black p-3.5 sm:p-8 w-full max-w-[calc(100vw-20px)] sm:max-w-2xl shadow-[4px_4px_0_0_#000] sm:shadow-[8px_8px_0_0_#000] max-h-[88dvh] overflow-y-auto overflow-x-hidden box-border"
+            className="bg-white border-3 sm:border-4 border-black p-3 sm:p-8 w-full max-w-[calc(100vw-16px)] sm:max-w-2xl shadow-[4px_4px_0_0_#000] sm:shadow-[8px_8px_0_0_#000] overflow-hidden box-border"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex justify-between items-start gap-2.5 mb-4 sm:mb-6 min-w-0">
+            {/* Header Row: Name, Initials/Role Badges & Close Button */}
+            <div className="flex justify-between items-start gap-2 mb-2.5 sm:mb-6 min-w-0">
               <div className="min-w-0 flex-1">
-                <h3 className="font-black text-2xl sm:text-5xl uppercase tracking-tighter leading-tight mb-2 break-words [overflow-wrap:anywhere]">
+                <h3 className="font-black text-lg sm:text-5xl uppercase tracking-tighter leading-tight mb-1 sm:mb-2 break-words [overflow-wrap:anywhere]">
                   {selectedStudent.name}
                 </h3>
-                <div className="flex flex-wrap gap-1.5 sm:gap-2 min-w-0">
+                <div className="flex flex-wrap items-center gap-1 sm:gap-2 min-w-0">
                   <span
-                    className={`px-2 py-0.5 sm:py-1 border-2 border-black font-bold uppercase text-[11px] sm:text-xs shadow-[2px_2px_0_0_#000] max-w-full break-words [overflow-wrap:anywhere] leading-tight ${
+                    className={`px-1.5 sm:px-2 py-0.5 sm:py-1 border-2 border-black font-bold uppercase text-[10px] sm:text-xs shadow-[2px_2px_0_0_#000] max-w-full break-words [overflow-wrap:anywhere] leading-tight ${
                       COLOR_CLASSES[selectedStudent.color] || "bg-white"
                     }`}
                   >
@@ -1020,7 +1077,7 @@ export default function Roster() {
                   </span>
                   {selectedStudent.role && (
                     <span
-                      className={`px-2 py-0.5 sm:py-1 border-2 border-black font-bold uppercase text-[11px] sm:text-xs shadow-[2px_2px_0_0_#000] max-w-full break-words [overflow-wrap:anywhere] leading-tight ${
+                      className={`px-1.5 sm:px-2 py-0.5 sm:py-1 border-2 border-black font-bold uppercase text-[10px] sm:text-xs shadow-[2px_2px_0_0_#000] max-w-full break-words [overflow-wrap:anywhere] leading-tight ${
                         COLOR_CLASSES[selectedStudent.color] || "bg-white"
                       }`}
                     >
@@ -1032,15 +1089,16 @@ export default function Roster() {
               <button
                 type="button"
                 onClick={() => setSelectedStudent(null)}
-                className="p-1.5 sm:p-2 hover:bg-gray-200 border-2 border-black rounded-full shrink-0"
+                className="p-1 sm:p-2 hover:bg-gray-200 border-2 border-black rounded-full shrink-0"
               >
-                <X size={20} className="sm:w-6 sm:h-6" />
+                <X size={18} className="sm:w-6 sm:h-6" />
               </button>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-8 min-w-0">
-              {/* Image Column - Proportional on mobile so it fits cleanly without overflowing */}
-              <div className="relative border-3 sm:border-4 border-black aspect-[4/5] w-full max-w-[210px] sm:max-w-none mx-auto bg-gray-100 shadow-[4px_4px_0_0_#000] sm:shadow-[6px_6px_0_0_#000] overflow-hidden min-w-0">
+            {/* Side-by-Side 2-Column Layout on BOTH Mobile and Desktop so Mobile never needs vertical scrolling */}
+            <div className="grid grid-cols-[116px_1fr] sm:grid-cols-2 gap-2.5 sm:gap-8 items-start min-w-0">
+              {/* Image Column */}
+              <div className="relative border-2 sm:border-4 border-black aspect-[4/5] w-full bg-gray-100 shadow-[3px_3px_0_0_#000] sm:shadow-[6px_6px_0_0_#000] overflow-hidden min-w-0">
                 {selectedStudent.imageUrl ? (
                   <img
                     src={parseImageUrl(selectedStudent.imageUrl)}
@@ -1052,17 +1110,17 @@ export default function Roster() {
                   <div
                     className={`w-full h-full ${
                       COLOR_CLASSES[selectedStudent.color] || "bg-white"
-                    } opacity-80 flex items-center justify-center p-3 overflow-hidden`}
+                    } opacity-80 flex items-center justify-center p-2 sm:p-3 overflow-hidden`}
                   >
                     <span
                       className={`font-black ${
                         (selectedStudent.initials || "").length <= 4
-                          ? "text-5xl sm:text-7xl"
+                          ? "text-3xl sm:text-7xl"
                           : (selectedStudent.initials || "").length <= 8
-                          ? "text-3xl sm:text-5xl"
+                          ? "text-xl sm:text-5xl"
                           : (selectedStudent.initials || "").length <= 16
-                          ? "text-xl sm:text-3xl"
-                          : "text-base sm:text-xl"
+                          ? "text-sm sm:text-3xl"
+                          : "text-xs sm:text-xl"
                       } opacity-30 text-center break-words [overflow-wrap:anywhere] line-clamp-4 leading-tight`}
                     >
                       {selectedStudent.initials}
@@ -1071,26 +1129,26 @@ export default function Roster() {
                 )}
               </div>
               
-              {/* Details Column */}
-              <div className="flex flex-col gap-4 sm:gap-6 min-w-0">
+              {/* Bio Details Column (sits right next to Photo on Mobile & Desktop) */}
+              <div className="flex flex-col gap-2 sm:gap-6 min-w-0 h-full">
                 {selectedStudent.quote && (
-                  <div className="bg-neo-cyan p-3 sm:p-4 border-2 border-black shadow-[3px_3px_0_0_#000] sm:shadow-[4px_4px_0_0_#000] min-w-0">
-                    <p className="font-bold text-sm sm:text-lg italic leading-snug break-words [overflow-wrap:anywhere]">
+                  <div className="bg-neo-cyan p-2 sm:p-4 border-2 border-black shadow-[2px_2px_0_0_#000] sm:shadow-[4px_4px_0_0_#000] min-w-0">
+                    <p className="font-bold text-[11px] sm:text-lg italic leading-snug break-words [overflow-wrap:anywhere] line-clamp-3 sm:line-clamp-none">
                       "{selectedStudent.quote}"
                     </p>
-                    <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest mt-1.5 sm:mt-2 opacity-70">
+                    <p className="text-[9px] sm:text-xs font-black uppercase tracking-widest mt-0.5 sm:mt-2 opacity-70">
                       — Motto
                     </p>
                   </div>
                 )}
 
-                <div className="space-y-3 sm:space-y-4 min-w-0">
+                <div className="space-y-1.5 sm:space-y-4 min-w-0">
                   {selectedStudent.birthday && (
                     <div className="min-w-0">
-                      <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-gray-500 mb-0.5 sm:mb-1">
+                      <p className="text-[9px] sm:text-xs font-black uppercase tracking-widest text-gray-500 leading-none mb-0.5">
                         Birthday
                       </p>
-                      <p className="font-bold text-sm sm:text-lg break-words [overflow-wrap:anywhere]">
+                      <p className="font-bold text-xs sm:text-lg break-words [overflow-wrap:anywhere] leading-tight">
                         🎂 {selectedStudent.birthday}
                       </p>
                     </div>
@@ -1098,10 +1156,10 @@ export default function Roster() {
 
                   {selectedStudent.favSubject && (
                     <div className="min-w-0">
-                      <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-gray-500 mb-0.5 sm:mb-1">
+                      <p className="text-[9px] sm:text-xs font-black uppercase tracking-widest text-gray-500 leading-none mb-0.5">
                         Favorite Subject
                       </p>
-                      <p className="font-bold text-sm sm:text-lg break-words [overflow-wrap:anywhere]">
+                      <p className="font-bold text-xs sm:text-lg break-words [overflow-wrap:anywhere] leading-tight">
                         📚 {selectedStudent.favSubject}
                       </p>
                     </div>
@@ -1109,46 +1167,42 @@ export default function Roster() {
 
                   {selectedStudent.funFact && (
                     <div className="min-w-0">
-                      <p className="text-[10px] sm:text-xs font-black uppercase tracking-widest text-gray-500 mb-0.5 sm:mb-1">
+                      <p className="text-[9px] sm:text-xs font-black uppercase tracking-widest text-gray-500 leading-none mb-0.5">
                         Fun Fact
                       </p>
-                      <p className="font-bold text-sm sm:text-base leading-snug break-words [overflow-wrap:anywhere]">
+                      <p className="font-bold text-xs sm:text-base leading-snug break-words [overflow-wrap:anywhere] line-clamp-3 sm:line-clamp-none">
                         {selectedStudent.funFact}
                       </p>
                     </div>
                   )}
                 </div>
+              </div>
 
-                {/* Socials & Music */}
-                <div className="mt-auto space-y-3 sm:space-y-4 pt-3 sm:pt-4 border-t-4 border-black min-w-0">
+              {/* Social Shortcuts (Instagram + TikTok with Logos) & Theme Song Player — Full width across bottom on mobile, right column on desktop */}
+              {(selectedStudent.instagram || selectedStudent.tiktok || selectedStudent.song) && (
+                <div className="col-span-2 sm:col-span-2 space-y-2 sm:space-y-3 pt-2 sm:pt-4 border-t-2 sm:border-t-4 border-black min-w-0">
                   {(selectedStudent.instagram || selectedStudent.tiktok) && (
                     <div className="flex flex-wrap gap-2 min-w-0">
                       {selectedStudent.instagram && (
                         <a
-                          href={
-                            selectedStudent.instagram.startsWith("http")
-                              ? selectedStudent.instagram
-                              : `https://${selectedStudent.instagram}`
-                          }
+                          href={formatInstagramUrl(selectedStudent.instagram)}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex-1 min-w-[110px] bg-white border-2 border-black p-2 flex items-center justify-center gap-1.5 sm:gap-2 font-bold text-xs sm:text-sm hover:-translate-y-1 hover:shadow-[4px_4px_0_0_#000] transition-all"
+                          className="flex-1 min-w-[110px] bg-white text-black border-2 border-black py-1.5 px-2.5 sm:p-2 shadow-[2px_2px_0_0_#000] flex items-center justify-center gap-1.5 sm:gap-2 font-bold text-xs sm:text-sm hover:-translate-y-0.5 hover:shadow-[4px_4px_0_0_#000] transition-all"
                         >
-                          <Instagram size={15} className="shrink-0" /> Instagram
+                          <Instagram size={15} className="shrink-0" />
+                          <span>Instagram</span>
                         </a>
                       )}
                       {selectedStudent.tiktok && (
                         <a
-                          href={
-                            selectedStudent.tiktok.startsWith("http")
-                              ? selectedStudent.tiktok
-                              : `https://${selectedStudent.tiktok}`
-                          }
+                          href={formatTikTokUrl(selectedStudent.tiktok)}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex-1 min-w-[110px] bg-black text-white border-2 border-black p-2 flex items-center justify-center gap-1.5 sm:gap-2 font-bold text-xs sm:text-sm hover:-translate-y-1 hover:shadow-[4px_4px_0_0_#000] transition-all"
+                          className="flex-1 min-w-[110px] bg-black text-white border-2 border-black py-1.5 px-2.5 sm:p-2 shadow-[2px_2px_0_0_#000] flex items-center justify-center gap-1.5 sm:gap-2 font-bold text-xs sm:text-sm hover:-translate-y-0.5 hover:shadow-[4px_4px_0_0_#000] transition-all"
                         >
-                          TikTok
+                          <TikTokIcon size={15} className="shrink-0" />
+                          <span>TikTok</span>
                         </a>
                       )}
                     </div>
@@ -1170,25 +1224,25 @@ export default function Roster() {
                     );
 
                     return (
-                      <div className="bg-white border-2 border-black p-2.5 sm:p-3 shadow-[3px_3px_0_0_#000] sm:shadow-[4px_4px_0_0_#000] flex flex-col gap-2 sm:gap-2.5 min-w-0 max-w-full overflow-hidden">
+                      <div className="bg-white border-2 border-black p-2 sm:p-3 shadow-[2px_2px_0_0_#000] sm:shadow-[4px_4px_0_0_#000] flex flex-col gap-1.5 sm:gap-2.5 min-w-0 max-w-full overflow-hidden">
                         <div className="flex items-center justify-between gap-2 min-w-0">
                           <div className="flex items-center gap-2 sm:gap-3 overflow-hidden min-w-0 flex-1">
                             <div className="relative shrink-0">
                               <img
                                 src={selectedStudent.song.coverUrl}
                                 alt="Cover"
-                                className={`w-10 h-10 sm:w-14 sm:h-14 border-2 border-black object-cover ${
+                                className={`w-9 h-9 sm:w-14 sm:h-14 border-2 border-black object-cover ${
                                   isStudentSongPlaying ? "animate-pulse" : ""
                                 }`}
                               />
                             </div>
                             <div className="overflow-hidden min-w-0 flex-1">
                               <div className="flex items-center gap-1 mb-0.5">
-                                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-neo-pink">
+                                <span className="text-[8px] sm:text-[10px] font-black uppercase tracking-widest text-neo-pink">
                                   Theme Song
                                 </span>
                                 {isLoadingStudentSong && (
-                                  <span className="text-[9px] font-bold uppercase text-gray-500">
+                                  <span className="text-[8px] sm:text-[9px] font-bold uppercase text-gray-500">
                                     · Memuat...
                                   </span>
                                 )}
@@ -1196,7 +1250,7 @@ export default function Roster() {
                               <p className="font-black text-xs sm:text-sm truncate uppercase leading-tight">
                                 {selectedStudent.song.title}
                               </p>
-                              <p className="text-[11px] sm:text-xs truncate font-body text-gray-800">
+                              <p className="text-[10px] sm:text-xs truncate font-body text-gray-800">
                                 {selectedStudent.song.artist}
                               </p>
                             </div>
@@ -1214,23 +1268,23 @@ export default function Roster() {
                             <button
                               type="button"
                               onClick={toggleStudentSongPlay}
-                              className="w-8 h-8 sm:w-9 sm:h-9 bg-neo-green border-2 border-black shadow-[2px_2px_0_0_#000] flex items-center justify-center hover:bg-green-400 transition-colors"
+                              className="w-7 h-7 sm:w-9 sm:h-9 bg-neo-green border-2 border-black shadow-[2px_2px_0_0_#000] flex items-center justify-center hover:bg-green-400 transition-colors"
                               title={isStudentSongPlaying ? "Jeda" : "Putar Lagu"}
                             >
                               {isStudentSongPlaying ? (
-                                <Pause size={15} className="fill-current" />
+                                <Pause size={14} className="fill-current" />
                               ) : (
-                                <Play size={15} className="fill-current ml-0.5" />
+                                <Play size={14} className="fill-current ml-0.5" />
                               )}
                             </button>
                           </div>
                         </div>
 
                         {/* Smooth Sliding Progress Bar with Blinking/Pulse Animation */}
-                        <div className="flex flex-col gap-1 min-w-0">
+                        <div className="flex flex-col gap-0.5 sm:gap-1 min-w-0">
                           <div
                             onClick={handleStudentSongSeek}
-                            className="w-full h-2.5 bg-gray-200 border border-black relative cursor-pointer overflow-hidden"
+                            className="w-full h-2 sm:h-2.5 bg-gray-200 border border-black relative cursor-pointer overflow-hidden"
                           >
                             <div
                               className={`h-full bg-neo-pink transition-[width] duration-75 ease-linear ${
@@ -1241,7 +1295,7 @@ export default function Roster() {
                               }}
                             />
                           </div>
-                          <div className="flex justify-between text-[10px] font-bold text-gray-700 tabular-nums">
+                          <div className="flex justify-between text-[9px] sm:text-[10px] font-bold text-gray-700 tabular-nums leading-none">
                             <span>{formatSeconds(studentSongCurrentTime)}</span>
                             <span>{formatSeconds(clipStart + effectiveClipLen)}</span>
                           </div>
@@ -1250,7 +1304,7 @@ export default function Roster() {
                     );
                   })()}
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </div>

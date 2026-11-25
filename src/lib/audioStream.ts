@@ -190,6 +190,34 @@ export function playResolvedStream({
   audio.volume = volume;
   audio.muted = muted;
 
+  const tryPlayAudio = () => {
+    if (cancelled || !autoPlay) return;
+    const playPromise = audio.play();
+    if (playPromise && typeof playPromise.then === "function") {
+      playPromise
+        .then(() => {
+          if (!cancelled) onPlayStateChange?.(true);
+        })
+        .catch(() => {
+          // On mobile browsers, play() during manifest setup can occasionally abort while buffering;
+          // retry once when canplaythrough fires.
+          const retryOnCanPlay = () => {
+            audio.removeEventListener("canplaythrough", retryOnCanPlay);
+            if (cancelled || !autoPlay) return;
+            audio
+              .play()
+              .then(() => {
+                if (!cancelled) onPlayStateChange?.(true);
+              })
+              .catch(() => {
+                if (!cancelled) onPlayStateChange?.(false);
+              });
+          };
+          audio.addEventListener("canplaythrough", retryOnCanPlay, { once: true });
+        });
+    }
+  };
+
   const fallbackToPreview = () => {
     if (cancelled) return;
     if (stream.fallbackPreviewUrl && stream.streamUrl !== stream.fallbackPreviewUrl) {
@@ -199,20 +227,14 @@ export function playResolvedStream({
         if (cancelled) return;
         const dur = audio.duration && isFinite(audio.duration) ? audio.duration : 30;
         const safeStart = Math.min(startTime, Math.max(0, dur - 2));
-        audio.currentTime = safeStart;
+        try {
+          audio.currentTime = safeStart;
+        } catch {}
         onReady?.(dur, false);
-        if (autoPlay) {
-          audio
-            .play()
-            .then(() => {
-              if (!cancelled) onPlayStateChange?.(true);
-            })
-            .catch(() => {
-              if (!cancelled) onPlayStateChange?.(false);
-            });
-        }
+        tryPlayAudio();
       };
       audio.load();
+      tryPlayAudio();
     } else {
       onError?.();
     }
@@ -239,16 +261,7 @@ export function playResolvedStream({
           } catch {}
         }
         onReady?.(stream.duration || 210, stream.isFullTrack);
-        if (autoPlay) {
-          audio
-            .play()
-            .then(() => {
-              if (!cancelled) onPlayStateChange?.(true);
-            })
-            .catch(() => {
-              if (!cancelled) onPlayStateChange?.(false);
-            });
-        }
+        tryPlayAudio();
       });
 
       audio.onloadedmetadata = () => {
@@ -263,6 +276,13 @@ export function playResolvedStream({
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (cancelled) return;
         if (data.fatal) {
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            try {
+              hls.recoverMediaError();
+              tryPlayAudio();
+              return;
+            } catch {}
+          }
           fallbackToPreview();
         }
       });
@@ -275,7 +295,7 @@ export function playResolvedStream({
       audio.canPlayType("application/vnd.apple.mpegurl") ||
       audio.canPlayType("audio/mpegurl")
     ) {
-      // Native HLS playback on iOS Safari / macOS Safari
+      // Native HLS playback on iOS Safari / macOS Safari / Mobile browsers
       audio.src = stream.streamUrl;
       audio.onloadedmetadata = () => {
         if (cancelled) return;
@@ -288,21 +308,13 @@ export function playResolvedStream({
           audio.currentTime = safeStart;
         } catch {}
         onReady?.(dur, stream.isFullTrack);
-        if (autoPlay) {
-          audio
-            .play()
-            .then(() => {
-              if (!cancelled) onPlayStateChange?.(true);
-            })
-            .catch(() => {
-              if (!cancelled) onPlayStateChange?.(false);
-            });
-        }
+        tryPlayAudio();
       };
       audio.onerror = () => {
         fallbackToPreview();
       };
       audio.load();
+      tryPlayAudio();
 
       return () => {
         cancelled = true;
@@ -323,21 +335,13 @@ export function playResolvedStream({
       audio.currentTime = safeStart;
     } catch {}
     onReady?.(dur, stream.isFullTrack);
-    if (autoPlay) {
-      audio
-        .play()
-        .then(() => {
-          if (!cancelled) onPlayStateChange?.(true);
-        })
-        .catch(() => {
-          if (!cancelled) onPlayStateChange?.(false);
-        });
-    }
+    tryPlayAudio();
   };
   audio.onerror = () => {
     fallbackToPreview();
   };
   audio.load();
+  tryPlayAudio();
 
   return () => {
     cancelled = true;

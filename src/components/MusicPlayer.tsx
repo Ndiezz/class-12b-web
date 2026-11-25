@@ -168,7 +168,7 @@ export const MusicPlayer: React.FC = () => {
         if (playing) {
           setWaitingForInteraction(false);
           hasStartedOnceRef.current = true;
-        } else if (!userPausedRef.current && !hasStartedOnceRef.current) {
+        } else if (!userPausedRef.current && !noteAudioActiveRef.current) {
           setWaitingForInteraction(true);
         }
       },
@@ -248,26 +248,28 @@ export const MusicPlayer: React.FC = () => {
     };
   }, [attemptPlay]);
 
-  // Unlock and play on first user touch/click/key anywhere on the screen
+  // Unlock and play on user touch/click/key anywhere on the screen (including mobile auto-next recovery)
   useEffect(() => {
     if (!waitingForInteraction || isPlaying) return;
 
-    const handleFirstInteraction = () => {
-      if (!userPausedRef.current && !hasStartedOnceRef.current) {
+    const handleInteraction = () => {
+      if (!userPausedRef.current && !noteAudioActiveRef.current && !isPlayingRef.current) {
         attemptPlay();
       }
     };
 
-    window.addEventListener('click', handleFirstInteraction, { passive: true });
-    window.addEventListener('touchstart', handleFirstInteraction, { passive: true });
-    window.addEventListener('pointerdown', handleFirstInteraction, { passive: true });
-    window.addEventListener('keydown', handleFirstInteraction, { passive: true });
+    window.addEventListener('click', handleInteraction, { passive: true });
+    window.addEventListener('touchstart', handleInteraction, { passive: true });
+    window.addEventListener('touchend', handleInteraction, { passive: true });
+    window.addEventListener('pointerdown', handleInteraction, { passive: true });
+    window.addEventListener('keydown', handleInteraction, { passive: true });
 
     return () => {
-      window.removeEventListener('click', handleFirstInteraction);
-      window.removeEventListener('touchstart', handleFirstInteraction);
-      window.removeEventListener('pointerdown', handleFirstInteraction);
-      window.removeEventListener('keydown', handleFirstInteraction);
+      window.removeEventListener('click', handleInteraction);
+      window.removeEventListener('touchstart', handleInteraction);
+      window.removeEventListener('touchend', handleInteraction);
+      window.removeEventListener('pointerdown', handleInteraction);
+      window.removeEventListener('keydown', handleInteraction);
     };
   }, [waitingForInteraction, isPlaying, attemptPlay]);
 
@@ -281,7 +283,7 @@ export const MusicPlayer: React.FC = () => {
       setProgress(0);
       setCurrentTime(0);
 
-      if (audioRef.current && !audioRef.current.src) {
+      if (audioRef.current) {
         unlockAudioOnGesture(audioRef.current);
       }
       void loadAndPlayTrack(nextIndex, true);
@@ -458,7 +460,7 @@ export const MusicPlayer: React.FC = () => {
       if (
         audio.ended ||
         (dur > 10 &&
-          curr >= dur - 0.2 &&
+          curr >= dur - 0.25 &&
           audio.paused &&
           !userPausedRef.current &&
           !noteAudioActiveRef.current &&
@@ -480,7 +482,7 @@ export const MusicPlayer: React.FC = () => {
   const volumePercent = Math.round(effectiveVolume * 100);
 
   return (
-    <div className="fixed bottom-6 right-6 z-[100]">
+    <div className="fixed bottom-3 right-3 sm:bottom-6 sm:right-6 z-[100]">
       {/* Direct Ad-Free HTML5 Audio Element */}
       <audio
         ref={audioRef}
@@ -512,20 +514,20 @@ export const MusicPlayer: React.FC = () => {
           )}
         </button>
       ) : (
-        <div className="bg-black/85 backdrop-blur-xl border border-white/15 rounded-2xl p-3.5 shadow-2xl flex flex-col gap-2.5 w-72 transition-all relative">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5 overflow-hidden">
+        <div className="bg-black/90 backdrop-blur-xl border border-white/15 rounded-2xl p-3 sm:p-3.5 shadow-2xl flex flex-col gap-2.5 w-[calc(100vw-24px)] max-w-[300px] sm:w-72 transition-all relative">
+          <div className="flex items-center justify-between gap-1.5">
+            <div className="flex items-center gap-2 overflow-hidden min-w-0">
               <div
-                className={`w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0 border border-white/10 ${
+                className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0 border border-white/10 ${
                   isPlaying ? 'text-emerald-400' : 'text-zinc-400'
                 }`}
               >
                 <Disc3
-                  className={`w-5 h-5 ${isPlaying ? 'animate-spin' : ''}`}
+                  className={`w-4 h-4 sm:w-5 sm:h-5 ${isPlaying ? 'animate-spin' : ''}`}
                   style={{ animationDuration: '4s' }}
                 />
               </div>
-              <div className="truncate">
+              <div className="truncate min-w-0">
                 <p className="text-xs font-semibold text-white truncate">
                   {currentTrack.title}
                 </p>
@@ -535,7 +537,7 @@ export const MusicPlayer: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center gap-1 shrink-0">
+            <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
               <button
                 onClick={prevTrack}
                 className="w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-zinc-400 hover:text-white transition-colors"
@@ -560,6 +562,25 @@ export const MusicPlayer: React.FC = () => {
                 title="Lagu Selanjutnya"
               >
                 <SkipForward className="w-3.5 h-3.5 fill-current" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLoopMode((prev) => (prev === 'all' ? 'one' : 'all'));
+                }}
+                className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 flex items-center justify-center transition-colors"
+                title={
+                  loopMode === 'all'
+                    ? 'Loop Playlist Aktif (Otomatis Next) — Ketuk untuk Loop 1 Lagu'
+                    : 'Loop 1 Lagu Aktif — Ketuk untuk Loop Playlist'
+                }
+              >
+                {loopMode === 'all' ? (
+                  <Repeat className="w-3.5 h-3.5" />
+                ) : (
+                  <Repeat1 className="w-3.5 h-3.5" />
+                )}
               </button>
               <button
                 onClick={() => setShowPlaylist((prev) => !prev)}
@@ -596,32 +617,32 @@ export const MusicPlayer: React.FC = () => {
             <div className="flex items-center justify-between text-[10px] text-zinc-400">
               <span>{formatTime(currentTime)}</span>
               <div className="flex items-center gap-1.5">
-                {waitingForInteraction && !isPlaying && (
+                {waitingForInteraction && !isPlaying ? (
                   <span className="text-emerald-400 animate-pulse">
                     Ketuk layar untuk memutar
                   </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setLoopMode((prev) => (prev === 'all' ? 'one' : 'all'));
+                    }}
+                    className="text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 font-medium"
+                  >
+                    {loopMode === 'all' ? (
+                      <>
+                        <Repeat className="w-3 h-3" />
+                        <span>Loop Playlist</span>
+                      </>
+                    ) : (
+                      <>
+                        <Repeat1 className="w-3 h-3" />
+                        <span>Loop 1 Lagu</span>
+                      </>
+                    )}
+                  </button>
                 )}
-
-                {/* Loop Mode Toggle (All Playlist Auto-Next Loop vs Single Song Loop) */}
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setLoopMode((prev) => (prev === 'all' ? 'one' : 'all'));
-                  }}
-                  className="text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-0.5 px-1 py-0.5 rounded bg-white/5 hover:bg-white/10"
-                  title={
-                    loopMode === 'all'
-                      ? 'Loop Semua Lagu (Otomatis Next) — Klik untuk Loop 1 Lagu'
-                      : 'Loop 1 Lagu — Klik untuk Loop Semua Lagu (Otomatis Next)'
-                  }
-                >
-                  {loopMode === 'all' ? (
-                    <Repeat className="w-3.5 h-3.5" />
-                  ) : (
-                    <Repeat1 className="w-3.5 h-3.5" />
-                  )}
-                </button>
 
                 {/* Vertical Volume Slider Trigger & Popover */}
                 <div
@@ -702,9 +723,34 @@ export const MusicPlayer: React.FC = () => {
             </div>
           </div>
 
-          {/* Tracklist Selector */}
+          {/* Tracklist Selector with Mobile Loop Playlist Toggle */}
           {showPlaylist && (
-            <div className="pt-2 border-t border-white/10 flex flex-col gap-1">
+            <div className="pt-2 border-t border-white/10 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between px-1 pb-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                  Daftar Lagu
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setLoopMode((prev) => (prev === 'all' ? 'one' : 'all'));
+                  }}
+                  className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-500/15 hover:bg-emerald-500/25 px-2 py-0.5 rounded-md transition-colors"
+                >
+                  {loopMode === 'all' ? (
+                    <>
+                      <Repeat className="w-3 h-3" />
+                      <span>Loop Playlist (Auto Next)</span>
+                    </>
+                  ) : (
+                    <>
+                      <Repeat1 className="w-3 h-3" />
+                      <span>Loop 1 Lagu</span>
+                    </>
+                  )}
+                </button>
+              </div>
               {PLAYLIST.map((track, idx) => {
                 const active = idx === currentTrackIndex;
                 return (
